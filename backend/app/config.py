@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
 
     # LLM defaults
-    default_model: str = "gpt-4o"
+    default_model: str = "gpt-5.2"
     default_temperature: float = 0.7
     default_max_tokens: int = 1024
 

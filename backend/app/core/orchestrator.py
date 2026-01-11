@@ -593,7 +593,7 @@ class Orchestrator:
         return result.scalar_one_or_none()
 
     async def _get_child_agent(self, parent: Agent, child_name: str) -> Optional[Agent]:
-        """Get a child agent by name."""
+        """Get a child agent by name or config ID."""
         result = await self.db.execute(
             select(Agent)
             .where(Agent.parent_agent_id == parent.id)
@@ -612,6 +612,11 @@ class Orchestrator:
 
         normalized_child = normalize(child_name)
         for agent in agents:
+            # First check config_json id (e.g., "topups", "remittances")
+            if agent.config_json and agent.config_json.get("id"):
+                if normalize(agent.config_json["id"]) == normalized_child:
+                    return agent
+            # Fallback to display name matching
             if normalized_child in normalize(agent.name):
                 return agent
         return None
