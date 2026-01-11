@@ -1,0 +1,466 @@
+{
+  "id": "topups",
+  "name": {
+    "en": "Top-Ups Agent",
+    "es": "Agente de Recargas"
+  },
+  "description": {
+    "en": "I'm the Felix top-ups specialist. I can help you with:\n- Sending top-ups to phones in Mexico and Latin America\n- Viewing available carriers (Telcel, Movistar, AT&T, etc.)\n- Checking your frequent numbers\n- Viewing top-up history\n\nTop-ups arrive instantly to the phone.",
+    "es": "Soy el especialista en recargas de Felix. Puedo ayudarte a:\n- Enviar recargas a celulares en México y Latinoamérica\n- Ver operadores disponibles (Telcel, Movistar, AT&T, etc.)\n- Consultar tus números frecuentes\n- Ver el historial de recargas\n\nLas recargas llegan instantáneamente al celular."
+  },
+  "system_prompt_addition": {
+    "en": "When you detect intent to make a top-up, use start_flow_recarga IMMEDIATELY.\nThe flow will guide the user step by step - do not collect information manually.",
+    "es": "Cuando detectes intención de hacer una recarga, usa start_flow_recarga INMEDIATAMENTE.\nEl flujo guiará al usuario paso a paso - no recopiles información manualmente."
+  },
+  "model_config": {
+    "model": "gpt-4o",
+    "temperature": 0.5,
+    "maxTokens": 1024
+  },
+  "navigation": {
+    "canGoUp": true,
+    "canGoHome": true,
+    "canEscalate": true
+  },
+  "parent_agent": "felix",
+  "context_requirements": [
+    {"type": "product_summary", "productFilter": "topups"}
+  ],
+  "tools": [
+    {
+      "name": "start_flow_recarga",
+      "description": {
+        "en": "USE IMMEDIATELY when the user wants to make a top-up. This flow guides the user step by step. Do NOT ask for information before - start the flow and it will take care of it.",
+        "es": "USAR INMEDIATAMENTE cuando el usuario quiera hacer una recarga. Este flujo guía al usuario paso a paso. NO preguntes información antes - inicia el flujo y él se encargará."
+      },
+      "parameters": [
+        {
+          "name": "phone_number",
+          "type": "string",
+          "required": false,
+          "description": {
+            "en": "Phone number if the user already provided it",
+            "es": "Número de teléfono si el usuario ya lo proporcionó"
+          }
+        }
+      ],
+      "side_effects": "none",
+      "requires_confirmation": false
+    },
+    {
+      "name": "get_carriers",
+      "description": {
+        "en": "Gets the available carriers for a country.",
+        "es": "Obtiene los operadores disponibles para un país."
+      },
+      "parameters": [
+        {
+          "name": "country",
+          "type": "string",
+          "required": false,
+          "description": {
+            "en": "Country code (MX, GT, etc.). Default MX.",
+            "es": "Código de país (MX, GT, etc.). Por defecto MX."
+          }
+        }
+      ],
+      "side_effects": "read",
+      "requires_confirmation": false
+    },
+    {
+      "name": "get_frequent_numbers",
+      "description": {
+        "en": "Gets the numbers the user frequently tops up.",
+        "es": "Obtiene los números a los que el usuario recarga frecuentemente."
+      },
+      "parameters": [],
+      "side_effects": "read",
+      "requires_confirmation": false
+    },
+    {
+      "name": "detect_carrier",
+      "description": {
+        "en": "Detects the carrier of a phone number.",
+        "es": "Detecta el operador de un número de teléfono."
+      },
+      "parameters": [
+        {
+          "name": "phone_number",
+          "type": "string",
+          "required": true,
+          "description": {
+            "en": "Phone number with country code",
+            "es": "Número de teléfono con código de país"
+          }
+        }
+      ],
+      "side_effects": "read",
+      "requires_confirmation": false
+    },
+    {
+      "name": "get_topup_price",
+      "description": {
+        "en": "Gets the USD price of a top-up.",
+        "es": "Obtiene el precio en USD de una recarga."
+      },
+      "parameters": [
+        {
+          "name": "carrier_id",
+          "type": "string",
+          "required": true,
+          "description": {
+            "en": "Carrier ID",
+            "es": "ID del operador"
+          }
+        },
+        {
+          "name": "amount",
+          "type": "number",
+          "required": true,
+          "description": {
+            "en": "Top-up amount in local currency",
+            "es": "Monto de la recarga en moneda local"
+          }
+        },
+        {
+          "name": "country",
+          "type": "string",
+          "required": false,
+          "description": {
+            "en": "Country code",
+            "es": "Código de país"
+          }
+        }
+      ],
+      "side_effects": "read",
+      "requires_confirmation": false
+    },
+    {
+      "name": "send_topup",
+      "description": {
+        "en": "Sends a top-up to a phone number. Only use this tool when you have the number, carrier, and amount confirmed.",
+        "es": "Envía una recarga a un número de teléfono. Solo usa esta herramienta cuando tengas el número, operador y monto confirmados."
+      },
+      "parameters": [
+        {
+          "name": "phone_number",
+          "type": "string",
+          "required": true,
+          "description": {
+            "en": "Destination phone number",
+            "es": "Número de teléfono destino"
+          }
+        },
+        {
+          "name": "carrier_id",
+          "type": "string",
+          "required": true,
+          "description": {
+            "en": "Carrier ID",
+            "es": "ID del operador"
+          }
+        },
+        {
+          "name": "amount",
+          "type": "number",
+          "required": true,
+          "description": {
+            "en": "Top-up amount in local currency",
+            "es": "Monto de la recarga en moneda local"
+          }
+        }
+      ],
+      "requires_confirmation": true,
+      "confirmation_template": {
+        "en": "Confirm sending a top-up of ${amount} MXN to {phone_number}?\n\nCarrier: {carrier_id}\nWill be charged to your payment method\nArrival: Instant",
+        "es": "¿Confirmas enviar una recarga de ${amount} MXN al número {phone_number}?\n\nOperador: {carrier_id}\nSe cargará a tu método de pago\nLlegada: Instantánea"
+      },
+      "side_effects": "financial",
+      "flow_transition": {
+        "onSuccess": "completed",
+        "onError": "error_state"
+      }
+    }
+  ],
+  "subflows": [
+    {
+      "id": "recarga",
+      "name": {
+        "en": "Top-Up Flow",
+        "es": "Flujo de Recarga"
+      },
+      "trigger_description": {
+        "en": "When the user wants to send a mobile top-up",
+        "es": "Cuando el usuario quiere enviar una recarga de celular"
+      },
+      "initial_state": "collect_number",
+      "data_schema": {
+        "phone_number": {"type": "string", "description": "Destination phone number"},
+        "carrier_id": {"type": "string", "description": "Detected carrier ID"},
+        "carrier_name": {"type": "string", "description": "Carrier name"},
+        "amount": {"type": "number", "description": "Top-up amount in MXN"},
+        "usd_total": {"type": "number", "description": "Total in USD"}
+      },
+      "timeout_config": {
+        "durationMinutes": 10,
+        "onTimeout": "abandon",
+        "reminderMessage": {
+          "en": "Are you still there? Your top-up is pending.",
+          "es": "¿Sigues ahí? Tu recarga está pendiente."
+        }
+      },
+      "states": [
+        {
+          "id": "collect_number",
+          "name": {
+            "en": "Collect Number",
+            "es": "Recolectar Número"
+          },
+          "agent_instructions": {
+            "en": "You are in the step of collecting the phone number for the top-up.\n\nYour task:\n1. If the user already provided a number, use detect_carrier to identify the carrier\n2. If they don't have a number, offer to show their frequent numbers with get_frequent_numbers\n3. Validate that the number is from Mexico (+52) or Guatemala (+502)\n\nWhen you have the number and detected carrier, confirm with the user and move to the next step.",
+            "es": "Estás en el paso de recolectar el número de teléfono para la recarga.\n\nTu tarea:\n1. Si el usuario ya proporcionó un número, usa detect_carrier para identificar el operador\n2. Si no tiene número, ofrece mostrar sus números frecuentes con get_frequent_numbers\n3. Valida que el número sea de México (+52) o Guatemala (+502)\n\nCuando tengas el número y el operador detectado, confirma con el usuario y pasa al siguiente paso."
+          },
+          "state_tools": [],
+          "transitions": [
+            {
+              "trigger": "carrier_detected",
+              "target": "select_amount",
+              "condition": "carrier_id is not None"
+            }
+          ],
+          "on_enter": {
+            "message": {
+              "en": "Perfect! Let's send a top-up. What number do you want to top up? I can also show you your frequent numbers.",
+              "es": "¡Perfecto! Vamos a enviar una recarga. ¿A qué número quieres recargar? También puedo mostrarte tus números frecuentes."
+            }
+          },
+          "is_final": false
+        },
+        {
+          "id": "select_amount",
+          "name": {
+            "en": "Select Amount",
+            "es": "Seleccionar Monto"
+          },
+          "agent_instructions": {
+            "en": "You are in the step of selecting the top-up amount.\n\nThe carrier has been detected. Your task:\n1. Show the available top-up options for the carrier (Telcel: $50, $100, $200, $500 MXN)\n2. Use get_topup_price to show the USD cost when the user asks\n3. Wait for the user to select an amount\n\nWhen the user selects an amount, use send_topup to process the top-up.",
+            "es": "Estás en el paso de seleccionar el monto de la recarga.\n\nEl operador ya fue detectado. Tu tarea:\n1. Muestra las opciones de recarga disponibles para el operador (Telcel: $50, $100, $200, $500 MXN)\n2. Usa get_topup_price para mostrar el costo en USD cuando el usuario pregunte\n3. Espera a que el usuario seleccione un monto\n\nCuando el usuario seleccione un monto, usa send_topup para procesar la recarga."
+          },
+          "state_tools": [],
+          "transitions": [
+            {
+              "trigger": "amount_selected",
+              "target": "confirm_payment",
+              "condition": "amount > 0"
+            }
+          ],
+          "on_enter": {
+            "message": {
+              "en": "The number is from {carrier_name}. These are the available top-up options:\n\n$50 MXN\n$100 MXN\n$200 MXN\n$500 MXN\n\nHow much do you want to top up?",
+              "es": "El número es de {carrier_name}. Estas son las opciones de recarga disponibles:\n\n$50 MXN\n$100 MXN\n$200 MXN\n$500 MXN\n\n¿Cuánto quieres recargar?"
+            }
+          },
+          "is_final": false
+        },
+        {
+          "id": "confirm_payment",
+          "name": {
+            "en": "Confirm Payment",
+            "es": "Confirmar Pago"
+          },
+          "agent_instructions": {
+            "en": "You are in the payment confirmation step.\n\nYour task:\n1. Show a summary of the top-up (number, carrier, amount, USD cost)\n2. Simulate a payment link: \"Your payment link is ready\"\n3. Use send_topup to execute the top-up - this will ask for confirmation automatically\n\nWhen the user confirms, the top-up will be processed.",
+            "es": "Estás en el paso de confirmación de pago.\n\nTu tarea:\n1. Muestra un resumen de la recarga (número, operador, monto, costo en USD)\n2. Simula un link de pago: \"Tu link de pago está listo\"\n3. Usa send_topup para ejecutar la recarga - esto pedirá confirmación automáticamente\n\nCuando el usuario confirme, la recarga se procesará."
+          },
+          "state_tools": [],
+          "transitions": [
+            {
+              "trigger": "payment_confirmed",
+              "target": "completed",
+              "condition": "topup_success == True"
+            },
+            {
+              "trigger": "payment_failed",
+              "target": "error_state",
+              "condition": "topup_success == False"
+            }
+          ],
+          "on_enter": {
+            "message": {
+              "en": "Top-up summary:\n\nNumber: {phone_number}\nCarrier: {carrier_name}\nAmount: ${amount} MXN\n\nYour payment link is ready. Confirm the top-up?",
+              "es": "Resumen de tu recarga:\n\nNúmero: {phone_number}\nOperador: {carrier_name}\nMonto: ${amount} MXN\n\nTu link de pago está listo. ¿Confirmas la recarga?"
+            }
+          },
+          "is_final": false
+        },
+        {
+          "id": "completed",
+          "name": {
+            "en": "Top-Up Completed",
+            "es": "Recarga Completada"
+          },
+          "agent_instructions": {
+            "en": "The top-up was completed. Use go_home IMMEDIATELY to return to the main menu. Do not wait for user response.",
+            "es": "La recarga se completó. Usa go_home INMEDIATAMENTE para regresar al menú principal. No esperes respuesta del usuario."
+          },
+          "state_tools": [],
+          "transitions": [],
+          "on_enter": null,
+          "is_final": true
+        },
+        {
+          "id": "error_state",
+          "name": {
+            "en": "Top-Up Error",
+            "es": "Error en Recarga"
+          },
+          "agent_instructions": {
+            "en": "There was an error in the top-up.\n\nYour task:\n1. Inform the user of the error\n2. Offer to try again or contact support\n3. Use go_home if the user wants to cancel",
+            "es": "Hubo un error en la recarga.\n\nTu tarea:\n1. Informa al usuario del error\n2. Ofrece intentar de nuevo o contactar soporte\n3. Usa go_home si el usuario quiere cancelar"
+          },
+          "state_tools": [],
+          "transitions": [
+            {
+              "trigger": "retry",
+              "target": "collect_number"
+            }
+          ],
+          "on_enter": {
+            "message": {
+              "en": "Sorry, there was a problem processing the top-up. Do you want to try again or would you prefer to talk to an agent?",
+              "es": "Lo siento, hubo un problema al procesar la recarga. ¿Quieres intentar de nuevo o prefieres hablar con un agente?"
+            }
+          },
+          "is_final": false
+        }
+      ]
+    }
+  ],
+  "response_templates": [
+    {
+      "name": {
+        "en": "Successful Top-Up",
+        "es": "Recarga Exitosa"
+      },
+      "trigger_config": {
+        "type": "tool_success",
+        "toolName": "send_topup"
+      },
+      "template": {
+        "en": "Top-up sent!\n\nNumber: {phoneNumber}\nCarrier: {carrier}\nAmount: ${localAmount} {localCurrency}\nCharged: ${usdCharged} USD\nConfirmation: {topupId}\n\nBalance will arrive in seconds.",
+        "es": "¡Recarga enviada!\n\nNúmero: {phoneNumber}\nOperador: {carrier}\nMonto: ${localAmount} {localCurrency}\nCobrado: ${usdCharged} USD\nConfirmación: {topupId}\n\nEl saldo llegará en segundos."
+      },
+      "required_fields": ["phoneNumber", "carrier", "localAmount", "localCurrency", "usdCharged", "topupId"],
+      "enforcement": "mandatory"
+    },
+    {
+      "name": {
+        "en": "Top-Up Error",
+        "es": "Error en Recarga"
+      },
+      "trigger_config": {
+        "type": "tool_error",
+        "toolName": "send_topup"
+      },
+      "template": {
+        "en": "We couldn't process the top-up: {error}\n\nDo you want to try again?",
+        "es": "No pudimos procesar la recarga: {error}\n\n¿Quieres intentar de nuevo?"
+      },
+      "required_fields": ["error"],
+      "enforcement": "mandatory"
+    }
+  ],
+  "test_scenarios": [
+    {
+      "id": "topup_happy_path",
+      "name": {
+        "en": "Happy Path - Complete Top-Up",
+        "es": "Camino Feliz - Recarga Completa"
+      },
+      "description": "Test a successful topup flow from start to finish",
+      "initial_context": {
+        "user_id": "test_topup_user",
+        "user_balance": 50.0,
+        "language": "es"
+      },
+      "turns": [
+        {
+          "user_input": "Quiero hacer una recarga",
+          "expected_behaviors": [
+            {"type": "contains_any", "text": ["recarga", "número", "teléfono"]}
+          ]
+        },
+        {
+          "user_input": "+52 55 1234 5678",
+          "expected_behaviors": [
+            {"type": "contains_any", "text": ["Telcel", "operador", "carrier"]}
+          ]
+        }
+      ],
+      "success_criteria": {
+        "no_escalation": true,
+        "no_error_state": true
+      },
+      "tags": ["smoke", "happy-path"],
+      "enabled": true
+    },
+    {
+      "id": "topup_invalid_number_recovery",
+      "name": {
+        "en": "Invalid Phone Number Recovery",
+        "es": "Recuperación de Número Inválido"
+      },
+      "description": "Test that agent handles invalid phone numbers gracefully and allows retry",
+      "initial_context": {
+        "user_id": "test_invalid_user",
+        "user_balance": 100.0,
+        "language": "es"
+      },
+      "turns": [
+        {
+          "user_input": "Recarga al 555-1234",
+          "expected_behaviors": [
+            {"type": "contains_any", "text": ["inválido", "no reconozco", "válido", "número"]}
+          ]
+        },
+        {
+          "user_input": "+52 55 9876 5432",
+          "expected_behaviors": [
+            {"type": "contains_any", "text": ["Telcel", "operador", "detectado"]}
+          ]
+        }
+      ],
+      "success_criteria": {
+        "no_escalation": true
+      },
+      "tags": ["error-handling", "recovery"],
+      "enabled": true
+    },
+    {
+      "id": "topup_frequent_numbers",
+      "name": {
+        "en": "View Frequent Numbers",
+        "es": "Ver Números Frecuentes"
+      },
+      "description": "Test that user can view their frequent numbers",
+      "initial_context": {
+        "user_id": "user_demo",
+        "user_balance": 50.0,
+        "language": "es"
+      },
+      "turns": [
+        {
+          "user_input": "Quiero ver mis números frecuentes",
+          "expected_behaviors": [
+            {"type": "contains_any", "text": ["frecuentes", "números", "Mamá", "Hermano"]}
+          ]
+        }
+      ],
+      "success_criteria": {
+        "no_escalation": true
+      },
+      "tags": ["feature"],
+      "enabled": true
+    }
+  ]
+}

@@ -1,0 +1,139 @@
+{
+  "users": [
+    {
+      "user_id": "user_demo",
+      "profile": {
+        "name": "Juan Pérez",
+        "preferredName": "Juan",
+        "language": "es",
+        "timezone": "America/Los_Angeles",
+        "memberSince": "2024-01-15",
+        "kycLevel": "verified"
+      },
+      "product_summaries": {
+        "remittances": {
+          "lifetimeCount": 24,
+          "lifetimeVolume": 5800.00,
+          "avgAmount": 241.67,
+          "lastTransactionAt": "2025-01-08",
+          "userSegment": "regular",
+          "frequentRecipients": [
+            {"name": "María García", "relationship": "madre", "location": "Guadalajara"}
+          ]
+        },
+        "credit": {
+          "hasActiveCredit": true,
+          "creditLimit": 500.00,
+          "currentBalance": 150.00,
+          "paymentHistory": "good"
+        },
+        "wallet": {
+          "currentBalance": 45.50
+        },
+        "topups": {
+          "frequentNumbers": ["+52 33 1234 5678"],
+          "preferredCarriers": ["telcel"]
+        }
+      },
+      "behavioral_summary": "Usuario frecuente de remesas que envía aproximadamente $250 USD cada 2 semanas a su mamá María en Guadalajara.\nTiene una línea de crédito activa con buen historial de pagos.\nOcasionalmente hace recargas de celular a México.\nPrefiere confirmaciones detalladas antes de enviar dinero."
+    },
+    {
+      "user_id": "user_maria",
+      "profile": {
+        "name": "María López",
+        "preferredName": "María",
+        "language": "es",
+        "timezone": "America/Chicago",
+        "memberSince": "2024-03-20",
+        "kycLevel": "verified"
+      },
+      "product_summaries": {
+        "remittances": {
+          "lifetimeCount": 8,
+          "lifetimeVolume": 2000.00,
+          "avgAmount": 250.00,
+          "lastTransactionAt": "2025-01-05",
+          "userSegment": "occasional",
+          "frequentRecipients": [
+            {"name": "Carlos López", "relationship": "hermano", "location": "Ciudad de México"}
+          ]
+        },
+        "credit": {
+          "hasActiveCredit": false,
+          "creditLimit": 0,
+          "currentBalance": 0,
+          "paymentHistory": "none"
+        },
+        "wallet": {
+          "currentBalance": 125.00
+        }
+      },
+      "behavioral_summary": "Usuaria ocasional que envía dinero a su hermano en Ciudad de México. No tiene línea de crédito."
+    },
+    {
+      "user_id": "user_carlos",
+      "profile": {
+        "name": "Carlos Ramírez",
+        "preferredName": "Carlos",
+        "language": "es",
+        "timezone": "America/New_York",
+        "memberSince": "2023-08-10",
+        "kycLevel": "verified"
+      },
+      "product_summaries": {
+        "remittances": {
+          "lifetimeCount": 52,
+          "lifetimeVolume": 15600.00,
+          "avgAmount": 300.00,
+          "lastTransactionAt": "2025-01-09",
+          "userSegment": "power_user",
+          "frequentRecipients": [
+            {"name": "Rosa Ramírez", "relationship": "madre", "location": "Puebla"},
+            {"name": "Pedro Ramírez", "relationship": "padre", "location": "Puebla"}
+          ]
+        },
+        "credit": {
+          "hasActiveCredit": true,
+          "creditLimit": 1000.00,
+          "currentBalance": 300.00,
+          "paymentHistory": "excellent"
+        },
+        "wallet": {
+          "currentBalance": 500.00
+        },
+        "topups": {
+          "frequentNumbers": ["+52 222 555 1234", "+52 222 555 5678"],
+          "preferredCarriers": ["telcel", "movistar"]
+        }
+      },
+      "behavioral_summary": "Usuario frecuente con alto volumen de remesas. Envía dinero semanalmente a sus padres en Puebla. Crédito alto límite con excelente historial."
+    },
+    {
+      "user_id": "user_english",
+      "profile": {
+        "name": "John Smith",
+        "preferredName": "John",
+        "language": "en",
+        "timezone": "America/New_York",
+        "memberSince": "2024-06-15",
+        "kycLevel": "verified"
+      },
+      "product_summaries": {
+        "remittances": {
+          "lifetimeCount": 5,
+          "lifetimeVolume": 1500.00,
+          "avgAmount": 300.00,
+          "lastTransactionAt": "2025-01-07",
+          "userSegment": "new",
+          "frequentRecipients": [
+            {"name": "Ana Martinez", "relationship": "wife", "location": "Mexico City"}
+          ]
+        },
+        "wallet": {
+          "currentBalance": 200.00
+        }
+      },
+      "behavioral_summary": "New user who sends money to his wife in Mexico. Prefers English interface."
+    }
+  ]
+}

@@ -1,0 +1,169 @@
+{
+  "id": "remittances",
+  "name": {
+    "en": "Remittances Agent",
+    "es": "Agente de Remesas"
+  },
+  "description": {
+    "en": "I'm the Felix remittances specialist. I can help you with:\n- Sending money to Mexico and Latin America\n- Checking current exchange rates\n- Viewing the status of your previous transfers\n- Managing your saved recipients\n\nRemittances typically arrive in 2-4 hours and the cost is $3.99 USD per transfer.",
+    "es": "Soy el especialista en remesas de Felix. Puedo ayudarte a:\n- Enviar dinero a México y Latinoamérica\n- Consultar tasas de cambio actuales\n- Ver el estado de tus envíos anteriores\n- Manejar tus destinatarios guardados\n\nLas remesas típicamente llegan en 2-4 horas y el costo es de $3.99 USD por envío."
+  },
+  "model_config": {
+    "model": "gpt-4o",
+    "temperature": 0.5,
+    "maxTokens": 1024
+  },
+  "navigation": {
+    "canGoUp": true,
+    "canGoHome": true,
+    "canEscalate": true
+  },
+  "parent_agent": "felix",
+  "context_requirements": [
+    {"type": "product_summary", "productFilter": "remittances"},
+    {"type": "recent_transactions", "productFilter": "remittances", "maxItems": 5}
+  ],
+  "tools": [
+    {
+      "name": "get_exchange_rate",
+      "description": {
+        "en": "Checks the current exchange rate for transfers to Mexico or other countries.",
+        "es": "Consulta la tasa de cambio actual para envíos a México u otros países."
+      },
+      "parameters": [
+        {
+          "name": "to_currency",
+          "type": "string",
+          "required": false,
+          "description": {
+            "en": "Destination currency (MXN, GTQ, COP, etc.). Default MXN.",
+            "es": "Moneda destino (MXN, GTQ, COP, etc.). Por defecto MXN."
+          }
+        }
+      ],
+      "side_effects": "read",
+      "requires_confirmation": false
+    },
+    {
+      "name": "get_recipients",
+      "description": {
+        "en": "Gets the user's saved recipients list.",
+        "es": "Obtiene la lista de destinatarios guardados del usuario."
+      },
+      "parameters": [],
+      "side_effects": "read",
+      "requires_confirmation": false
+    },
+    {
+      "name": "calculate_transfer",
+      "description": {
+        "en": "Calculates transfer details including fees and amount the recipient will receive.",
+        "es": "Calcula los detalles de un envío incluyendo fees y cantidad que recibirá el destinatario."
+      },
+      "parameters": [
+        {
+          "name": "amount_usd",
+          "type": "number",
+          "required": true,
+          "description": {
+            "en": "Amount to send in USD",
+            "es": "Cantidad a enviar en USD"
+          }
+        },
+        {
+          "name": "to_currency",
+          "type": "string",
+          "required": false,
+          "description": {
+            "en": "Destination currency. Default MXN.",
+            "es": "Moneda destino. Por defecto MXN."
+          }
+        }
+      ],
+      "side_effects": "read",
+      "requires_confirmation": false
+    },
+    {
+      "name": "create_transfer",
+      "description": {
+        "en": "Creates and executes a remittance transfer.",
+        "es": "Crea y ejecuta una transferencia de remesa."
+      },
+      "parameters": [
+        {
+          "name": "recipient_id",
+          "type": "string",
+          "required": true,
+          "description": {
+            "en": "Recipient ID",
+            "es": "ID del destinatario"
+          }
+        },
+        {
+          "name": "amount_usd",
+          "type": "number",
+          "required": true,
+          "description": {
+            "en": "Amount to send in USD",
+            "es": "Cantidad a enviar en USD"
+          }
+        },
+        {
+          "name": "payment_method_id",
+          "type": "string",
+          "required": false,
+          "description": {
+            "en": "Payment method ID to use",
+            "es": "ID del método de pago a usar"
+          }
+        }
+      ],
+      "requires_confirmation": true,
+      "confirmation_template": {
+        "en": "Confirm sending ${amount_usd} USD?\n\nThe recipient will receive the equivalent in Mexican pesos\nWill be charged to your default payment method\nEstimated arrival: approximately 2 hours",
+        "es": "¿Confirmas enviar ${amount_usd} USD?\n\nEl destinatario recibirá el equivalente en pesos mexicanos\nSe cargará a tu método de pago predeterminado\nLlegada estimada: en aproximadamente 2 horas"
+      },
+      "side_effects": "financial"
+    },
+    {
+      "name": "get_transfer_status",
+      "description": {
+        "en": "Checks the status of an existing transfer.",
+        "es": "Consulta el estado de un envío existente."
+      },
+      "parameters": [
+        {
+          "name": "transfer_id",
+          "type": "string",
+          "required": false,
+          "description": {
+            "en": "Transfer ID. If not provided, shows recent transfers.",
+            "es": "ID del envío. Si no se proporciona, muestra envíos recientes."
+          }
+        }
+      ],
+      "side_effects": "read",
+      "requires_confirmation": false
+    },
+    {
+      "name": "get_recent_transfers",
+      "description": {
+        "en": "Gets the user's recent transfers.",
+        "es": "Obtiene los envíos recientes del usuario."
+      },
+      "parameters": [
+        {
+          "name": "limit",
+          "type": "number",
+          "required": false,
+          "description": {
+            "en": "Maximum number of transfers to show. Default 5.",
+            "es": "Número máximo de envíos a mostrar. Por defecto 5."
+          }
+        }
+      ],
+      "side_effects": "read",
+      "requires_confirmation": false
+    }
+  ]
+}

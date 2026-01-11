@@ -1,0 +1,106 @@
+{
+  "your_current_role": {
+    "en": "\n## Your Current Role\n{description}",
+    "es": "\n## Tu Rol Actual\n{description}"
+  },
+  "user_section": {
+    "en": "\n## User\nName: {name}",
+    "es": "\n## Usuario\nNombre: {name}"
+  },
+  "user_context": {
+    "en": "\n## User Context\n{behavioral_summary}",
+    "es": "\n## Contexto del Usuario\n{behavioral_summary}"
+  },
+  "product_context": {
+    "en": "\n## {agent_name} Context\n{summary}",
+    "es": "\n## Contexto de {agent_name}\n{summary}"
+  },
+  "previous_history": {
+    "en": "\n## Previous Conversation History\n{history}",
+    "es": "\n## Historial de Conversación Anterior\n{history}"
+  },
+  "flow_state": {
+    "en": "\n## Current Flow State\nFlow: {flow_id}\nState: {state_id}\n\n### Instructions for this state:\n{instructions}",
+    "es": "\n## Estado Actual del Flujo\nFlujo: {flow_id}\nEstado: {state_id}\n\n### Instrucciones para este estado:\n{instructions}"
+  },
+  "collected_data": {
+    "en": "\nCollected data: {data}",
+    "es": "\nDatos recolectados: {data}"
+  },
+  "confirmation_pending": {
+    "en": "\n## PENDING CONFIRMATION\nThe user must confirm the following action before you can proceed:\n{display_message}\n\nWait for explicit confirmation from the user (yes, confirm, do it, etc.) before executing {tool_name}.\nIf the user says no or cancels, clear the confirmation and ask what else they need.",
+    "es": "\n## CONFIRMACIÓN PENDIENTE\nEl usuario debe confirmar la siguiente acción antes de que puedas proceder:\n{display_message}\n\nEspera confirmación explícita del usuario (sí, confirmo, hazlo, etc.) antes de ejecutar {tool_name}.\nSi el usuario dice no o cancela, limpia la confirmación y pregunta qué más necesita."
+  },
+  "scope_rule": {
+    "en": "\n## CRITICAL SCOPE RULE\nYou have a specific scope defined in your description. If the user asks for ANYTHING outside that scope:\n1. Do NOT try to help with the topic\n2. Do NOT explain that you can't help\n3. ONLY call go_home immediately - the system will direct the user to the correct specialist\n\nWhen you successfully complete your main task, call go_home to return the user to the main menu.",
+    "es": "\n## REGLA CRÍTICA DE ALCANCE\nTienes un alcance específico definido en tu descripción. Si el usuario pide CUALQUIER COSA fuera de ese alcance:\n1. NO intentes ayudar con el tema\n2. NO expliques que no puedes ayudar\n3. SOLO llama go_home inmediatamente - el sistema dirigirá al usuario al especialista correcto\n\nCuando completes tu tarea principal exitosamente, llama go_home para devolver al usuario al menú principal."
+  },
+  "navigation": {
+    "en": "\n## Navigation\n- Use 'go_home' to transfer to main assistant\n- Use 'up_one_level' to go back to previous menu\n- Use 'escalate_to_human' if user needs to speak with a person",
+    "es": "\n## Navegación\n- Usa 'go_home' para transferir al asistente principal\n- Usa 'up_one_level' para volver al menú anterior\n- Usa 'escalate_to_human' si el usuario necesita hablar con una persona"
+  },
+  "go_home_tool": {
+    "en": "Transfer the conversation to the main assistant. USE THIS TOOL when the user asks for something outside your scope - the main assistant will handle directing them to the correct specialist. Also use it when you complete your task.",
+    "es": "Transferir la conversación al asistente principal. USA ESTA HERRAMIENTA cuando el usuario pida algo fuera de tu alcance - el asistente principal se encargará de dirigirlo al especialista correcto. También úsala cuando completes tu tarea."
+  },
+  "up_one_level_tool": {
+    "en": "Go back to the previous agent/menu",
+    "es": "Volver al agente/menú anterior"
+  },
+  "escalate_to_human_tool": {
+    "en": "Escalate to a human agent when the user requests it or when you cannot resolve the issue",
+    "es": "Escalar a un agente humano cuando el usuario lo solicite o cuando no puedas resolver el problema"
+  },
+  "escalation_reason": {
+    "en": "Reason for escalation",
+    "es": "Razón de la escalación"
+  },
+  "product_labels": {
+    "remittances": {
+      "lifetime_count": {
+        "en": "Total transfers",
+        "es": "Envíos totales"
+      },
+      "last_transaction": {
+        "en": "Last transfer",
+        "es": "Último envío"
+      },
+      "frequent_recipients": {
+        "en": "Frequent recipients",
+        "es": "Destinatarios frecuentes"
+      }
+    },
+    "credit": {
+      "active_credit": {
+        "en": "Active credit",
+        "es": "Crédito activo"
+      },
+      "yes": {
+        "en": "Yes",
+        "es": "Sí"
+      },
+      "no": {
+        "en": "No",
+        "es": "No"
+      },
+      "current_balance": {
+        "en": "Current balance",
+        "es": "Saldo actual"
+      },
+      "limit": {
+        "en": "Limit",
+        "es": "Límite"
+      }
+    },
+    "wallet": {
+      "balance": {
+        "en": "Balance",
+        "es": "Saldo"
+      }
+    }
+  },
+  "history_compactor_prompt": {
+    "en": "You are an assistant that summarizes conversations.\nSummarize the following conversation concisely, capturing:\n- Main topics discussed\n- Actions taken or requested\n- Any important user information\nKeep the summary under 150 words.",
+    "es": "Eres un asistente que resume conversaciones.\nResume la siguiente conversación de manera concisa, capturando:\n- Temas principales discutidos\n- Acciones tomadas o solicitadas\n- Cualquier información importante del usuario\nMantén el resumen bajo 150 palabras."
+  }
+}

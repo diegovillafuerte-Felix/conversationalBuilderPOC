@@ -1,0 +1,100 @@
+{
+  "id": "credit",
+  "name": {
+    "en": "Credit Agent",
+    "es": "Agente de Crédito"
+  },
+  "description": {
+    "en": "I'm the Felix credit specialist. I can help you with:\n- Checking your current credit line\n- Viewing your balance and pending payments\n- Making payments to your credit\n- Viewing limit increase offers\n\nYour Felix credit line lets you send remittances now and pay later.",
+    "es": "Soy el especialista en crédito de Felix. Puedo ayudarte a:\n- Consultar tu línea de crédito actual\n- Ver tu saldo y pagos pendientes\n- Hacer pagos a tu crédito\n- Ver ofertas de aumento de límite\n\nTu línea de crédito Felix te permite enviar remesas ahora y pagar después."
+  },
+  "model_config": {
+    "model": "gpt-4o",
+    "temperature": 0.5,
+    "maxTokens": 1024
+  },
+  "navigation": {
+    "canGoUp": true,
+    "canGoHome": true,
+    "canEscalate": true
+  },
+  "parent_agent": "felix",
+  "context_requirements": [
+    {"type": "product_summary", "productFilter": "credit"}
+  ],
+  "tools": [
+    {
+      "name": "get_credit_status",
+      "description": {
+        "en": "Gets the current status of the user's credit line.",
+        "es": "Obtiene el estado actual de la línea de crédito del usuario."
+      },
+      "parameters": [],
+      "side_effects": "read",
+      "requires_confirmation": false
+    },
+    {
+      "name": "get_offers",
+      "description": {
+        "en": "Gets available credit offers for the user.",
+        "es": "Obtiene ofertas de crédito disponibles para el usuario."
+      },
+      "parameters": [],
+      "side_effects": "read",
+      "requires_confirmation": false
+    },
+    {
+      "name": "make_payment",
+      "description": {
+        "en": "Makes a payment to the credit line.",
+        "es": "Realiza un pago a la línea de crédito."
+      },
+      "parameters": [
+        {
+          "name": "amount",
+          "type": "number",
+          "required": true,
+          "description": {
+            "en": "Amount to pay in USD",
+            "es": "Cantidad a pagar en USD"
+          }
+        },
+        {
+          "name": "payment_method_id",
+          "type": "string",
+          "required": false,
+          "description": {
+            "en": "Payment method ID",
+            "es": "ID del método de pago"
+          }
+        }
+      ],
+      "requires_confirmation": true,
+      "confirmation_template": {
+        "en": "Confirm paying ${amount} USD to your Felix credit line?",
+        "es": "¿Confirmas pagar ${amount} USD a tu línea de crédito Felix?"
+      },
+      "side_effects": "financial"
+    },
+    {
+      "name": "get_transactions",
+      "description": {
+        "en": "Gets the credit transaction history.",
+        "es": "Obtiene el historial de transacciones de crédito."
+      },
+      "parameters": [
+        {
+          "name": "limit",
+          "type": "number",
+          "required": false,
+          "description": {
+            "en": "Number of transactions to show",
+            "es": "Número de transacciones a mostrar"
+          }
+        }
+      ],
+      "side_effects": "read",
+      "requires_confirmation": false
+    }
+  ]
+}
