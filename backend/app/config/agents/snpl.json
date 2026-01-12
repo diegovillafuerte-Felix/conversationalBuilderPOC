@@ -1,0 +1,996 @@
+{
+  "id": "snpl",
+  "name": {
+    "en": "Send Now Pay Later",
+    "es": "Envía Ahora Paga Después"
+  },
+  "description": {
+    "en": "I'm the SNPL specialist. I can help you with:\n- Checking if you qualify for credit\n- Applying for $200-$1000 to send remittances\n- Making payments on your loans\n- Viewing your loan status and payment schedule\n\nWith SNPL, you can send money to your loved ones now and pay over 4-26 weeks.",
+    "es": "Soy el especialista en SNPL. Puedo ayudarte a:\n- Verificar si calificas para crédito\n- Solicitar $200-$1000 para enviar remesas\n- Hacer pagos a tus préstamos\n- Ver el estado de tu préstamo y calendario de pagos\n\nCon SNPL, puedes enviar dinero a tus seres queridos ahora y pagar en 4-26 semanas."
+  },
+  "system_prompt_addition": {
+    "en": "IMPORTANT - IMMEDIATE FLOW TRIGGERS:\n- When user wants to APPLY for SNPL or get credit: use 'start_flow_apply_snpl' IMMEDIATELY\n- When user wants to MAKE A PAYMENT on their loan: use 'start_flow_pay_snpl' IMMEDIATELY\n- When user wants to USE their approved credit to send money: use 'start_flow_use_snpl' IMMEDIATELY\n\nDo NOT manually collect amounts, terms, or other details - the flows handle all data collection.\n\nFor informational queries (eligibility check, loan status, payment history), use the appropriate info tools directly.",
+    "es": "IMPORTANTE - ACTIVADORES DE FLUJO INMEDIATOS:\n- Cuando el usuario quiera SOLICITAR SNPL u obtener crédito: usa 'start_flow_apply_snpl' INMEDIATAMENTE\n- Cuando el usuario quiera HACER UN PAGO a su préstamo: usa 'start_flow_pay_snpl' INMEDIATAMENTE\n- Cuando el usuario quiera USAR su crédito aprobado para enviar dinero: usa 'start_flow_use_snpl' INMEDIATAMENTE\n\nNO recopiles manualmente montos, plazos u otros detalles - los flujos manejan toda la recopilación de datos.\n\nPara consultas informativas (verificar elegibilidad, estado del préstamo, historial de pagos), usa las herramientas de información directamente."
+  },
+  "model_config": {
+    "model": "gpt-4o",
+    "temperature": 0.5,
+    "maxTokens": 1024
+  },
+  "navigation": {
+    "canGoUp": true,
+    "canGoHome": true,
+    "canEscalate": true
+  },
+  "parent_agent": "felix",
+  "context_requirements": [
+    {
+      "type": "product_summary",
+      "productFilter": "snpl"
+    }
+  ],
+  "tools": [
+    {
+      "name": "start_flow_apply_snpl",
+      "description": {
+        "en": "Start the SNPL application flow. Use IMMEDIATELY when user wants to apply for credit, get a loan, or mentions 'envía ahora paga después'. Do NOT ask questions first - the flow handles everything.",
+        "es": "Iniciar el flujo de solicitud SNPL. Usa INMEDIATAMENTE cuando el usuario quiera solicitar crédito, obtener un préstamo, o mencione 'envía ahora paga después'. NO hagas preguntas primero - el flujo maneja todo."
+      },
+      "parameters": [],
+      "side_effects": "flow",
+      "requires_confirmation": false,
+      "starts_flow": "apply_snpl_flow"
+    },
+    {
+      "name": "start_flow_pay_snpl",
+      "description": {
+        "en": "Start the payment flow. Use IMMEDIATELY when user wants to make a payment on their SNPL loan.",
+        "es": "Iniciar el flujo de pago. Usa INMEDIATAMENTE cuando el usuario quiera hacer un pago a su préstamo SNPL."
+      },
+      "parameters": [],
+      "side_effects": "flow",
+      "requires_confirmation": false,
+      "starts_flow": "pay_snpl_flow"
+    },
+    {
+      "name": "start_flow_use_snpl",
+      "description": {
+        "en": "Route user to remittances to use their SNPL credit. Use when user has approved credit and wants to send money now.",
+        "es": "Dirigir al usuario a remesas para usar su crédito SNPL. Usar cuando el usuario tiene crédito aprobado y quiere enviar dinero ahora."
+      },
+      "parameters": [
+        {
+          "name": "loan_id",
+          "type": "string",
+          "required": true,
+          "description": {
+            "en": "The SNPL loan ID to use for the remittance",
+            "es": "El ID del préstamo SNPL a usar para la remesa"
+          }
+        },
+        {
+          "name": "amount_usd",
+          "type": "number",
+          "required": true,
+          "description": {
+            "en": "The amount to send (from SNPL loan)",
+            "es": "El monto a enviar (del préstamo SNPL)"
+          }
+        }
+      ],
+      "side_effects": "navigation",
+      "requires_confirmation": false,
+      "routing": {
+        "type": "start_flow",
+        "target": "snpl_remittance_flow",
+        "cross_agent": "remittances"
+      }
+    },
+    {
+      "name": "get_snpl_eligibility",
+      "description": {
+        "en": "Check if the user is eligible for SNPL and their pre-approved amount. Use when user asks about eligibility, limits, or if they qualify.",
+        "es": "Verificar si el usuario es elegible para SNPL y su monto pre-aprobado. Usar cuando el usuario pregunte sobre elegibilidad, límites, o si califica."
+      },
+      "parameters": [],
+      "side_effects": "read",
+      "requires_confirmation": false
+    },
+    {
+      "name": "get_snpl_overview",
+      "description": {
+        "en": "Get overview of user's SNPL status including active loans, total balance, and next payment. Use when user asks about their loans, balance, or 'how much do I owe'.",
+        "es": "Obtener resumen del estado SNPL del usuario incluyendo préstamos activos, saldo total, y próximo pago. Usar cuando el usuario pregunte sobre sus préstamos, saldo, o 'cuánto debo'."
+      },
+      "parameters": [],
+      "side_effects": "read",
+      "requires_confirmation": false
+    },
+    {
+      "name": "get_loan_details",
+      "description": {
+        "en": "Get detailed information about a specific loan including balance, payment schedule, and associated remittance.",
+        "es": "Obtener información detallada de un préstamo específico incluyendo saldo, calendario de pagos, y remesa asociada."
+      },
+      "parameters": [
+        {
+          "name": "loan_id",
+          "type": "string",
+          "required": true,
+          "description": {
+            "en": "The SNPL loan ID",
+            "es": "El ID del préstamo SNPL"
+          }
+        }
+      ],
+      "side_effects": "read",
+      "requires_confirmation": false
+    },
+    {
+      "name": "list_loans",
+      "description": {
+        "en": "List all user's SNPL loans. Can filter by status (ACTIVE, PAID_OFF, etc).",
+        "es": "Listar todos los préstamos SNPL del usuario. Puede filtrar por estado (ACTIVE, PAID_OFF, etc)."
+      },
+      "parameters": [
+        {
+          "name": "status",
+          "type": "string",
+          "required": false,
+          "description": {
+            "en": "Filter by loan status: ACTIVE, PAID_OFF, PAST_DUE, DEFAULTED",
+            "es": "Filtrar por estado: ACTIVE, PAID_OFF, PAST_DUE, DEFAULTED"
+          }
+        }
+      ],
+      "side_effects": "read",
+      "requires_confirmation": false
+    },
+    {
+      "name": "get_payment_schedule",
+      "description": {
+        "en": "Get the payment schedule for a specific loan showing all upcoming payments.",
+        "es": "Obtener el calendario de pagos para un préstamo específico mostrando todos los pagos próximos."
+      },
+      "parameters": [
+        {
+          "name": "loan_id",
+          "type": "string",
+          "required": true,
+          "description": {
+            "en": "The SNPL loan ID",
+            "es": "El ID del préstamo SNPL"
+          }
+        }
+      ],
+      "side_effects": "read",
+      "requires_confirmation": false
+    },
+    {
+      "name": "get_payment_history",
+      "description": {
+        "en": "Get history of payments made on SNPL loans.",
+        "es": "Obtener historial de pagos realizados a préstamos SNPL."
+      },
+      "parameters": [
+        {
+          "name": "loan_id",
+          "type": "string",
+          "required": false,
+          "description": {
+            "en": "Specific loan ID (optional - omit for all loans)",
+            "es": "ID de préstamo específico (opcional - omitir para todos los préstamos)"
+          }
+        },
+        {
+          "name": "limit",
+          "type": "number",
+          "required": false,
+          "description": {
+            "en": "Maximum number of payments to return (default 10)",
+            "es": "Número máximo de pagos a devolver (por defecto 10)"
+          }
+        }
+      ],
+      "side_effects": "read",
+      "requires_confirmation": false
+    },
+    {
+      "name": "calculate_terms",
+      "description": {
+        "en": "Calculate loan terms (weekly payment, total cost, APR) for a given amount and term length.",
+        "es": "Calcular términos del préstamo (pago semanal, costo total, APR) para un monto y plazo dado."
+      },
+      "parameters": [
+        {
+          "name": "amount",
+          "type": "number",
+          "required": true,
+          "description": {
+            "en": "Loan amount in USD (200-1000)",
+            "es": "Monto del préstamo en USD (200-1000)"
+          }
+        },
+        {
+          "name": "weeks",
+          "type": "number",
+          "required": true,
+          "description": {
+            "en": "Term length in weeks (4, 8, 12, 16, 20, or 26)",
+            "es": "Duración del plazo en semanas (4, 8, 12, 16, 20, o 26)"
+          }
+        }
+      ],
+      "side_effects": "read",
+      "requires_confirmation": false
+    },
+    {
+      "name": "submit_snpl_application",
+      "description": {
+        "en": "Submit an SNPL loan application. Used within the apply_snpl_flow to finalize the application.",
+        "es": "Enviar una solicitud de préstamo SNPL. Usado dentro del apply_snpl_flow para finalizar la solicitud."
+      },
+      "parameters": [
+        {
+          "name": "amount",
+          "type": "number",
+          "required": true,
+          "description": {
+            "en": "Requested loan amount in USD",
+            "es": "Monto solicitado del préstamo en USD"
+          }
+        },
+        {
+          "name": "term_weeks",
+          "type": "number",
+          "required": true,
+          "description": {
+            "en": "Loan term in weeks",
+            "es": "Plazo del préstamo en semanas"
+          }
+        }
+      ],
+      "requires_confirmation": true,
+      "confirmation_template": {
+        "en": "Confirm your SNPL application:\n• Amount: ${amount}\n• Term: ${term_weeks} weeks\n\nDo you want to proceed?",
+        "es": "Confirma tu solicitud SNPL:\n• Monto: ${amount}\n• Plazo: ${term_weeks} semanas\n\n¿Deseas continuar?"
+      },
+      "side_effects": "financial",
+      "flow_transition": {
+        "onSuccess": "completed",
+        "onError": "rejected"
+      }
+    },
+    {
+      "name": "make_snpl_payment",
+      "description": {
+        "en": "Make a payment on an SNPL loan. Used within the pay_snpl_flow.",
+        "es": "Hacer un pago a un préstamo SNPL. Usado dentro del pay_snpl_flow."
+      },
+      "parameters": [
+        {
+          "name": "loan_id",
+          "type": "string",
+          "required": true,
+          "description": {
+            "en": "The SNPL loan ID to pay",
+            "es": "El ID del préstamo SNPL a pagar"
+          }
+        },
+        {
+          "name": "amount",
+          "type": "number",
+          "required": true,
+          "description": {
+            "en": "Amount to pay in USD",
+            "es": "Monto a pagar en USD"
+          }
+        },
+        {
+          "name": "payment_method_id",
+          "type": "string",
+          "required": false,
+          "description": {
+            "en": "Payment method ID (optional)",
+            "es": "ID del método de pago (opcional)"
+          }
+        }
+      ],
+      "requires_confirmation": true,
+      "confirmation_template": {
+        "en": "Confirm payment of ${amount} to loan ${loan_id}?",
+        "es": "¿Confirmas pagar ${amount} al préstamo ${loan_id}?"
+      },
+      "side_effects": "financial",
+      "flow_transition": {
+        "onSuccess": "completed",
+        "onError": "error_state"
+      }
+    },
+    {
+      "name": "go_home",
+      "description": {
+        "en": "Return to the main Felix assistant.",
+        "es": "Regresar al asistente principal Felix."
+      },
+      "parameters": [],
+      "side_effects": "navigation",
+      "requires_confirmation": false
+    },
+    {
+      "name": "escalate_to_human",
+      "description": {
+        "en": "Transfer to a human agent for complex issues.",
+        "es": "Transferir a un agente humano para problemas complejos."
+      },
+      "parameters": [
+        {
+          "name": "reason",
+          "type": "string",
+          "required": false,
+          "description": {
+            "en": "Reason for escalation",
+            "es": "Razón de la escalación"
+          }
+        }
+      ],
+      "side_effects": "navigation",
+      "requires_confirmation": false
+    }
+  ],
+  "subflows": [
+    {
+      "id": "apply_snpl_flow",
+      "name": {
+        "en": "SNPL Application",
+        "es": "Solicitud SNPL"
+      },
+      "trigger_description": {
+        "en": "Triggered when user wants to apply for SNPL credit",
+        "es": "Se activa cuando el usuario quiere solicitar crédito SNPL"
+      },
+      "initial_state": "check_eligibility",
+      "data_schema": {
+        "eligibility_tier": {
+          "type": "string",
+          "description": "User's eligibility tier"
+        },
+        "max_amount": {
+          "type": "number",
+          "description": "Maximum approved amount"
+        },
+        "requested_amount": {
+          "type": "number",
+          "description": "Amount user wants to borrow"
+        },
+        "term_weeks": {
+          "type": "number",
+          "description": "Selected term in weeks"
+        },
+        "apr": {
+          "type": "number",
+          "description": "Annual percentage rate"
+        },
+        "weekly_payment": {
+          "type": "number",
+          "description": "Calculated weekly payment"
+        },
+        "total_repayment": {
+          "type": "number",
+          "description": "Total amount to repay"
+        },
+        "loan_id": {
+          "type": "string",
+          "description": "Created loan ID"
+        }
+      },
+      "timeout_config": {
+        "durationMinutes": 15,
+        "onTimeout": "abandon",
+        "reminderMessage": {
+          "en": "Your SNPL application is still in progress. Would you like to continue?",
+          "es": "Tu solicitud SNPL sigue en progreso. ¿Deseas continuar?"
+        }
+      },
+      "states": [
+        {
+          "id": "check_eligibility",
+          "name": {
+            "en": "Check Eligibility",
+            "es": "Verificar Elegibilidad"
+          },
+          "agent_instructions": {
+            "en": "Call get_snpl_eligibility to check the user's eligibility. If eligible, tell them their pre-approved amount and ask how much they'd like to borrow ($200-$1000). If not eligible, explain why and offer to help with something else.",
+            "es": "Llama a get_snpl_eligibility para verificar la elegibilidad del usuario. Si es elegible, dile su monto pre-aprobado y pregunta cuánto le gustaría pedir prestado ($200-$1000). Si no es elegible, explica por qué y ofrece ayudar con otra cosa."
+          },
+          "state_tools": [
+            "get_snpl_eligibility"
+          ],
+          "transitions": [
+            {
+              "trigger": "eligible",
+              "target": "select_amount",
+              "condition": "eligibility.eligible == true"
+            },
+            {
+              "trigger": "not_eligible",
+              "target": "rejected"
+            }
+          ],
+          "on_enter": {
+            "message": {
+              "en": "Let me check your SNPL eligibility...",
+              "es": "Déjame verificar tu elegibilidad para SNPL..."
+            }
+          }
+        },
+        {
+          "id": "select_amount",
+          "name": {
+            "en": "Select Amount",
+            "es": "Seleccionar Monto"
+          },
+          "agent_instructions": {
+            "en": "The user is eligible! Ask them how much they'd like to borrow. They can borrow between $200 and their pre-approved maximum (stored in flow data). Validate that the amount is within range before proceeding.",
+            "es": "¡El usuario es elegible! Pregúntale cuánto le gustaría pedir prestado. Puede pedir entre $200 y su máximo pre-aprobado (guardado en los datos del flujo). Valida que el monto esté dentro del rango antes de continuar."
+          },
+          "state_tools": [],
+          "transitions": [
+            {
+              "trigger": "amount_selected",
+              "target": "select_term",
+              "condition": "amount >= 200 and amount <= max_amount"
+            }
+          ]
+        },
+        {
+          "id": "select_term",
+          "name": {
+            "en": "Select Term",
+            "es": "Seleccionar Plazo"
+          },
+          "agent_instructions": {
+            "en": "Ask the user to select their payment term. Available options are: 4, 8, 12, 16, 20, or 26 weeks. Use calculate_terms to show them what the weekly payment would be for different terms. Help them understand that shorter terms mean higher weekly payments but less total interest.",
+            "es": "Pide al usuario que seleccione su plazo de pago. Las opciones disponibles son: 4, 8, 12, 16, 20, o 26 semanas. Usa calculate_terms para mostrarles cuál sería el pago semanal para diferentes plazos. Ayúdales a entender que plazos más cortos significan pagos semanales más altos pero menos interés total."
+          },
+          "state_tools": [
+            "calculate_terms"
+          ],
+          "transitions": [
+            {
+              "trigger": "term_selected",
+              "target": "review_terms"
+            }
+          ]
+        },
+        {
+          "id": "review_terms",
+          "name": {
+            "en": "Review Terms",
+            "es": "Revisar Términos"
+          },
+          "agent_instructions": {
+            "en": "Show a complete summary of the loan terms: amount, term (weeks), APR, weekly payment, total repayment, first payment date. Ask the user to confirm they want to proceed. If they want to change anything, go back to select_amount.",
+            "es": "Muestra un resumen completo de los términos del préstamo: monto, plazo (semanas), APR, pago semanal, pago total, fecha del primer pago. Pregunta al usuario si quiere confirmar y proceder. Si quieren cambiar algo, regresa a select_amount."
+          },
+          "state_tools": [
+            "calculate_terms"
+          ],
+          "transitions": [
+            {
+              "trigger": "user_confirms",
+              "target": "processing"
+            },
+            {
+              "trigger": "user_modifies",
+              "target": "select_amount"
+            },
+            {
+              "trigger": "user_cancels",
+              "target": "cancelled"
+            }
+          ]
+        },
+        {
+          "id": "processing",
+          "name": {
+            "en": "Processing Application",
+            "es": "Procesando Solicitud"
+          },
+          "agent_instructions": {
+            "en": "Call submit_snpl_application with the selected amount and term_weeks. This will process the application and return the result. The tool has a confirmation step built in.",
+            "es": "Llama a submit_snpl_application con el monto y term_weeks seleccionados. Esto procesará la solicitud y devolverá el resultado. La herramienta tiene un paso de confirmación incorporado."
+          },
+          "state_tools": [
+            "submit_snpl_application"
+          ],
+          "transitions": [
+            {
+              "trigger": "approved",
+              "target": "completed",
+              "condition": "application.approved == true"
+            },
+            {
+              "trigger": "denied",
+              "target": "rejected"
+            }
+          ],
+          "on_enter": {
+            "message": {
+              "en": "Processing your application...",
+              "es": "Procesando tu solicitud..."
+            }
+          }
+        },
+        {
+          "id": "completed",
+          "name": {
+            "en": "Application Approved",
+            "es": "Solicitud Aprobada"
+          },
+          "agent_instructions": {
+            "en": "Congratulate the user! Their SNPL application has been approved. Show them their loan details (loan_id, amount, weekly_payment, first_payment_date). Then ask if they would like to send a remittance now using their new credit. If yes, use start_flow_use_snpl to route them to the remittances agent.",
+            "es": "¡Felicita al usuario! Su solicitud SNPL ha sido aprobada. Muéstrales los detalles de su préstamo (loan_id, monto, pago_semanal, fecha_primer_pago). Luego pregunta si les gustaría enviar una remesa ahora usando su nuevo crédito. Si es sí, usa start_flow_use_snpl para dirigirlos al agente de remesas."
+          },
+          "state_tools": [
+            "start_flow_use_snpl",
+            "go_home"
+          ],
+          "transitions": [],
+          "is_final": true
+        },
+        {
+          "id": "rejected",
+          "name": {
+            "en": "Application Rejected",
+            "es": "Solicitud Rechazada"
+          },
+          "agent_instructions": {
+            "en": "The application was not approved. Explain the reason sympathetically and offer alternatives. Suggest they can try again later or contact support for more information.",
+            "es": "La solicitud no fue aprobada. Explica la razón con empatía y ofrece alternativas. Sugiere que pueden intentar más tarde o contactar soporte para más información."
+          },
+          "state_tools": [
+            "go_home",
+            "escalate_to_human"
+          ],
+          "transitions": [],
+          "is_final": true
+        },
+        {
+          "id": "cancelled",
+          "name": {
+            "en": "Application Cancelled",
+            "es": "Solicitud Cancelada"
+          },
+          "agent_instructions": {
+            "en": "The user cancelled their application. Acknowledge this and ask if there's anything else you can help with.",
+            "es": "El usuario canceló su solicitud. Reconoce esto y pregunta si hay algo más en lo que puedas ayudar."
+          },
+          "state_tools": [
+            "go_home"
+          ],
+          "transitions": [],
+          "is_final": true
+        }
+      ]
+    },
+    {
+      "id": "pay_snpl_flow",
+      "name": {
+        "en": "SNPL Payment",
+        "es": "Pago SNPL"
+      },
+      "trigger_description": {
+        "en": "Triggered when user wants to make a payment on their SNPL loan",
+        "es": "Se activa cuando el usuario quiere hacer un pago a su préstamo SNPL"
+      },
+      "initial_state": "select_loan",
+      "data_schema": {
+        "loan_id": {
+          "type": "string",
+          "description": "Selected loan ID"
+        },
+        "loan_balance": {
+          "type": "number",
+          "description": "Current loan balance"
+        },
+        "minimum_payment": {
+          "type": "number",
+          "description": "Minimum payment amount"
+        },
+        "payment_amount": {
+          "type": "number",
+          "description": "Amount user wants to pay"
+        },
+        "payment_method_id": {
+          "type": "string",
+          "description": "Selected payment method"
+        }
+      },
+      "timeout_config": {
+        "durationMinutes": 10,
+        "onTimeout": "abandon",
+        "reminderMessage": {
+          "en": "Your payment is still in progress. Would you like to continue?",
+          "es": "Tu pago sigue en progreso. ¿Deseas continuar?"
+        }
+      },
+      "states": [
+        {
+          "id": "select_loan",
+          "name": {
+            "en": "Select Loan",
+            "es": "Seleccionar Préstamo"
+          },
+          "agent_instructions": {
+            "en": "Call get_snpl_overview to see the user's active loans. If they have no active loans, inform them and exit. If they have one loan, proceed directly. If multiple loans, ask which one they want to pay.",
+            "es": "Llama a get_snpl_overview para ver los préstamos activos del usuario. Si no tiene préstamos activos, infórmale y sal. Si tiene un préstamo, procede directamente. Si tiene varios, pregunta cuál quiere pagar."
+          },
+          "state_tools": [
+            "get_snpl_overview",
+            "list_loans"
+          ],
+          "transitions": [
+            {
+              "trigger": "loan_selected",
+              "target": "choose_payment_amount"
+            },
+            {
+              "trigger": "no_loans",
+              "target": "no_active_loans"
+            }
+          ],
+          "on_enter": {
+            "message": {
+              "en": "Let me check your active loans...",
+              "es": "Déjame revisar tus préstamos activos..."
+            }
+          }
+        },
+        {
+          "id": "choose_payment_amount",
+          "name": {
+            "en": "Choose Payment Amount",
+            "es": "Elegir Monto de Pago"
+          },
+          "agent_instructions": {
+            "en": "Show the loan details (balance, weekly payment). Ask how much they want to pay. Offer options: 1) Minimum payment (weekly_payment), 2) Pay off full balance, 3) Custom amount. Validate the amount doesn't exceed the balance.",
+            "es": "Muestra los detalles del préstamo (saldo, pago semanal). Pregunta cuánto quieren pagar. Ofrece opciones: 1) Pago mínimo (pago_semanal), 2) Pagar saldo completo, 3) Monto personalizado. Valida que el monto no exceda el saldo."
+          },
+          "state_tools": [
+            "get_loan_details"
+          ],
+          "transitions": [
+            {
+              "trigger": "amount_selected",
+              "target": "select_payment_method"
+            }
+          ]
+        },
+        {
+          "id": "select_payment_method",
+          "name": {
+            "en": "Select Payment Method",
+            "es": "Seleccionar Método de Pago"
+          },
+          "agent_instructions": {
+            "en": "Ask the user which payment method they'd like to use. For this mock, we'll assume they have a default payment method on file. Confirm the payment method and proceed.",
+            "es": "Pregunta al usuario qué método de pago le gustaría usar. Para este mock, asumimos que tienen un método de pago predeterminado en archivo. Confirma el método de pago y procede."
+          },
+          "state_tools": [],
+          "transitions": [
+            {
+              "trigger": "method_selected",
+              "target": "confirm_payment"
+            }
+          ]
+        },
+        {
+          "id": "confirm_payment",
+          "name": {
+            "en": "Confirm Payment",
+            "es": "Confirmar Pago"
+          },
+          "agent_instructions": {
+            "en": "Show a summary of the payment: loan_id, amount to pay, payment method. Use make_snpl_payment to process. The tool has built-in confirmation.",
+            "es": "Muestra un resumen del pago: loan_id, monto a pagar, método de pago. Usa make_snpl_payment para procesar. La herramienta tiene confirmación incorporada."
+          },
+          "state_tools": [
+            "make_snpl_payment"
+          ],
+          "transitions": [
+            {
+              "trigger": "payment_success",
+              "target": "completed",
+              "condition": "payment.success == true"
+            },
+            {
+              "trigger": "payment_failed",
+              "target": "error_state"
+            },
+            {
+              "trigger": "user_cancels",
+              "target": "cancelled"
+            }
+          ]
+        },
+        {
+          "id": "completed",
+          "name": {
+            "en": "Payment Complete",
+            "es": "Pago Completado"
+          },
+          "agent_instructions": {
+            "en": "Payment was successful! Show the confirmation: payment amount, new balance, payments remaining. If the loan is now paid off, congratulate them. Ask if there's anything else they need.",
+            "es": "¡El pago fue exitoso! Muestra la confirmación: monto pagado, nuevo saldo, pagos restantes. Si el préstamo ya está pagado, felicítalos. Pregunta si necesitan algo más."
+          },
+          "state_tools": [
+            "go_home"
+          ],
+          "transitions": [],
+          "is_final": true
+        },
+        {
+          "id": "error_state",
+          "name": {
+            "en": "Payment Error",
+            "es": "Error de Pago"
+          },
+          "agent_instructions": {
+            "en": "There was an error processing the payment. Explain the issue and offer to try again or use a different payment method.",
+            "es": "Hubo un error procesando el pago. Explica el problema y ofrece intentar de nuevo o usar un método de pago diferente."
+          },
+          "state_tools": [
+            "go_home",
+            "escalate_to_human"
+          ],
+          "transitions": [
+            {
+              "trigger": "retry",
+              "target": "choose_payment_amount"
+            }
+          ],
+          "is_final": true
+        },
+        {
+          "id": "no_active_loans",
+          "name": {
+            "en": "No Active Loans",
+            "es": "Sin Préstamos Activos"
+          },
+          "agent_instructions": {
+            "en": "The user has no active SNPL loans to pay. Let them know and ask if they'd like to apply for one or need help with something else.",
+            "es": "El usuario no tiene préstamos SNPL activos para pagar. Hazle saber y pregunta si le gustaría solicitar uno o necesita ayuda con otra cosa."
+          },
+          "state_tools": [
+            "start_flow_apply_snpl",
+            "go_home"
+          ],
+          "transitions": [],
+          "is_final": true
+        },
+        {
+          "id": "cancelled",
+          "name": {
+            "en": "Payment Cancelled",
+            "es": "Pago Cancelado"
+          },
+          "agent_instructions": {
+            "en": "The user cancelled the payment. Acknowledge and ask if there's anything else you can help with.",
+            "es": "El usuario canceló el pago. Reconoce y pregunta si hay algo más en lo que puedas ayudar."
+          },
+          "state_tools": [
+            "go_home"
+          ],
+          "transitions": [],
+          "is_final": true
+        }
+      ]
+    }
+  ],
+  "response_templates": [
+    {
+      "name": {
+        "en": "SNPL Application Rejected",
+        "es": "Solicitud SNPL Rechazada"
+      },
+      "trigger_config": {
+        "type": "tool_error",
+        "toolName": "submit_snpl_application"
+      },
+      "template": {
+        "en": "We couldn't approve your SNPL application at this time.\n\n**Reason:** {reason}\n\nYou can try again later or contact our support team for more information.",
+        "es": "No pudimos aprobar tu solicitud SNPL en este momento.\n\n**Razón:** {reason}\n\nPuedes intentar más tarde o contactar a nuestro equipo de soporte para más información."
+      },
+      "required_fields": [
+        "reason"
+      ],
+      "enforcement": "mandatory"
+    }
+  ],
+  "test_scenarios": [
+    {
+      "id": "snpl_eligibility_check",
+      "name": {
+        "en": "Check SNPL eligibility",
+        "es": "Verificar elegibilidad SNPL"
+      },
+      "description": "User checks if they qualify for SNPL",
+      "initial_context": {
+        "user_id": "user_demo",
+        "language": "es"
+      },
+      "turns": [
+        {
+          "user_input": "¿puedo obtener crédito?",
+          "expected_behaviors": [
+            {
+              "type": "tool_called",
+              "toolName": "get_snpl_eligibility"
+            },
+            {
+              "type": "contains_any",
+              "text": [
+                "pre-aprobado",
+                "elegible",
+                "calificas",
+                "$600"
+              ]
+            }
+          ]
+        }
+      ],
+      "success_criteria": {
+        "no_escalation": true,
+        "no_error_state": true
+      },
+      "tags": [
+        "smoke",
+        "eligibility"
+      ],
+      "enabled": true
+    },
+    {
+      "id": "snpl_full_application",
+      "name": {
+        "en": "Complete SNPL application",
+        "es": "Solicitud SNPL completa"
+      },
+      "description": "User completes full SNPL application flow",
+      "initial_context": {
+        "user_id": "user_demo",
+        "language": "es"
+      },
+      "turns": [
+        {
+          "user_input": "quiero solicitar snpl",
+          "expected_behaviors": [
+            {
+              "type": "tool_called",
+              "toolName": "start_flow_apply_snpl"
+            }
+          ]
+        },
+        {
+          "user_input": "500 dólares",
+          "expected_behaviors": [
+            {
+              "type": "contains_any",
+              "text": [
+                "semanas",
+                "plazo",
+                "término"
+              ]
+            }
+          ]
+        },
+        {
+          "user_input": "12 semanas",
+          "expected_behaviors": [
+            {
+              "type": "contains_any",
+              "text": [
+                "confirmar",
+                "resumen",
+                "revisar"
+              ]
+            }
+          ]
+        },
+        {
+          "user_input": "sí, confirmo",
+          "expected_behaviors": [
+            {
+              "type": "contains_any",
+              "text": [
+                "aprobado",
+                "felicidades",
+                "SNPL-"
+              ]
+            }
+          ]
+        }
+      ],
+      "success_criteria": {
+        "no_escalation": true,
+        "final_state": "completed"
+      },
+      "tags": [
+        "happy-path",
+        "application"
+      ],
+      "enabled": true
+    },
+    {
+      "id": "snpl_make_payment",
+      "name": {
+        "en": "Make SNPL payment",
+        "es": "Hacer pago SNPL"
+      },
+      "description": "User makes a payment on their SNPL loan",
+      "initial_context": {
+        "user_id": "user_demo",
+        "language": "es"
+      },
+      "turns": [
+        {
+          "user_input": "quiero pagar mi préstamo",
+          "expected_behaviors": [
+            {
+              "type": "tool_called",
+              "toolName": "start_flow_pay_snpl"
+            }
+          ]
+        }
+      ],
+      "success_criteria": {
+        "no_escalation": true,
+        "no_error_state": true
+      },
+      "tags": [
+        "payment"
+      ],
+      "enabled": true
+    },
+    {
+      "id": "snpl_check_status",
+      "name": {
+        "en": "Check SNPL status",
+        "es": "Ver estado SNPL"
+      },
+      "description": "User checks their SNPL loan status",
+      "initial_context": {
+        "user_id": "user_demo",
+        "language": "es"
+      },
+      "turns": [
+        {
+          "user_input": "¿cuánto debo?",
+          "expected_behaviors": [
+            {
+              "type": "tool_called",
+              "toolName": "get_snpl_overview"
+            },
+            {
+              "type": "contains_any",
+              "text": [
+                "saldo",
+                "balance",
+                "préstamo",
+                "$"
+              ]
+            }
+          ]
+        }
+      ],
+      "success_criteria": {
+        "no_escalation": true
+      },
+      "tags": [
+        "status",
+        "info"
+      ],
+      "enabled": true
+    }
+  ]
+}

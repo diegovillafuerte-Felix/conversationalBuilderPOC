@@ -217,8 +217,8 @@
             "es": "Recolectar Número"
           },
           "agent_instructions": {
-            "en": "You are in the step of collecting the phone number for the top-up.\n\nYour task:\n1. If the user already provided a number, use detect_carrier to identify the carrier\n2. If they don't have a number, offer to show their frequent numbers with get_frequent_numbers\n3. Validate that the number is from Mexico (+52) or Guatemala (+502)\n\nWhen you have the number and detected carrier, confirm with the user and move to the next step.",
-            "es": "Estás en el paso de recolectar el número de teléfono para la recarga.\n\nTu tarea:\n1. Si el usuario ya proporcionó un número, usa detect_carrier para identificar el operador\n2. Si no tiene número, ofrece mostrar sus números frecuentes con get_frequent_numbers\n3. Valida que el número sea de México (+52) o Guatemala (+502)\n\nCuando tengas el número y el operador detectado, confirma con el usuario y pasa al siguiente paso."
+            "en": "You are collecting the phone number for a top-up.\n\nThe 'frequentNumbersData' in Available Context Data contains the user's frequent numbers (if any). Present them in a clear, friendly format and ask which number they want to top up. Tell them they can also provide a different number.\n\nWhen they provide a number (from the list or new), use detect_carrier to identify the carrier.",
+            "es": "Estás recolectando el número para una recarga.\n\nEl 'frequentNumbersData' en los Datos de Contexto Disponibles contiene los números frecuentes del usuario (si existen). Preséntalos en un formato claro y amigable y pregunta cuál número quieren recargar. Diles que también pueden proporcionar un número diferente.\n\nCuando proporcionen un número (de la lista o nuevo), usa detect_carrier para identificar el operador."
           },
           "state_tools": [],
           "transitions": [
@@ -229,9 +229,10 @@
             }
           ],
           "on_enter": {
-            "message": {
-              "en": "Perfect! Let's send a top-up. What number do you want to top up? I can also show you your frequent numbers.",
-              "es": "¡Perfecto! Vamos a enviar una recarga. ¿A qué número quieres recargar? También puedo mostrarte tus números frecuentes."
+            "callTool": {
+              "name": "get_frequent_numbers",
+              "parameters": {},
+              "storeAs": "frequentNumbersData"
             }
           },
           "is_final": false
@@ -337,22 +338,6 @@
     }
   ],
   "response_templates": [
-    {
-      "name": {
-        "en": "Successful Top-Up",
-        "es": "Recarga Exitosa"
-      },
-      "trigger_config": {
-        "type": "tool_success",
-        "toolName": "send_topup"
-      },
-      "template": {
-        "en": "Top-up sent!\n\nNumber: {phoneNumber}\nCarrier: {carrier}\nAmount: ${localAmount} {localCurrency}\nCharged: ${usdCharged} USD\nConfirmation: {topupId}\n\nBalance will arrive in seconds.",
-        "es": "¡Recarga enviada!\n\nNúmero: {phoneNumber}\nOperador: {carrier}\nMonto: ${localAmount} {localCurrency}\nCobrado: ${usdCharged} USD\nConfirmación: {topupId}\n\nEl saldo llegará en segundos."
-      },
-      "required_fields": ["phoneNumber", "carrier", "localAmount", "localCurrency", "usdCharged", "topupId"],
-      "enforcement": "mandatory"
-    },
     {
       "name": {
         "en": "Top-Up Error",

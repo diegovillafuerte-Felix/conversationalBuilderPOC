@@ -5,8 +5,12 @@
     "es": "Agente de Remesas"
   },
   "description": {
-    "en": "I'm the Felix remittances specialist. I can help you with:\n- Sending money to Mexico and Latin America\n- Checking current exchange rates\n- Viewing the status of your previous transfers\n- Managing your saved recipients\n\nRemittances typically arrive in 2-4 hours and the cost is $3.99 USD per transfer.",
-    "es": "Soy el especialista en remesas de Felix. Puedo ayudarte a:\n- Enviar dinero a México y Latinoamérica\n- Consultar tasas de cambio actuales\n- Ver el estado de tus envíos anteriores\n- Manejar tus destinatarios guardados\n\nLas remesas típicamente llegan en 2-4 horas y el costo es de $3.99 USD por envío."
+    "en": "I'm the Felix remittances specialist. I can help you with:\n- Sending money to Mexico and Latin America (MX, GT, HN, CO, DO, SV, NI)\n- Checking current exchange rates\n- Viewing the status of your previous transfers\n- Managing your saved recipients\n\nRemittances typically arrive in 2-4 hours and fees start at $3.99 USD.",
+    "es": "Soy el especialista en remesas de Felix. Puedo ayudarte a:\n- Enviar dinero a México y Latinoamérica (MX, GT, HN, CO, DO, SV, NI)\n- Consultar tasas de cambio actuales\n- Ver el estado de tus envíos anteriores\n- Manejar tus destinatarios guardados\n\nLas remesas típicamente llegan en 2-4 horas y las comisiones empiezan en $3.99 USD."
+  },
+  "system_prompt_addition": {
+    "en": "IMMEDIATE ACTIONS:\n- When user wants to send money → start_flow_send_money\n- When user mentions a new recipient name → start_flow_add_recipient\n- When user says 'send again' or mentions recent transfer → start_flow_quick_send\n\nDo NOT collect information manually - use flows which guide the conversation step by step.\n\nFor information queries (rate, status, history, limits), use the appropriate info tools directly.",
+    "es": "ACCIONES INMEDIATAS:\n- Cuando el usuario quiera enviar dinero → start_flow_send_money\n- Cuando el usuario mencione un nuevo destinatario → start_flow_add_recipient\n- Cuando el usuario diga 'enviar de nuevo' o mencione un envío reciente → start_flow_quick_send\n\nNO recopiles información manualmente - usa los flujos que guían la conversación paso a paso.\n\nPara consultas de información (tipo de cambio, estado, historial, límites), usa las herramientas de información directamente."
   },
   "model_config": {
     "model": "gpt-4o",
@@ -20,24 +24,94 @@
   },
   "parent_agent": "felix",
   "context_requirements": [
-    {"type": "product_summary", "productFilter": "remittances"},
-    {"type": "recent_transactions", "productFilter": "remittances", "maxItems": 5}
+    {
+      "type": "product_summary",
+      "productFilter": "remittances"
+    },
+    {
+      "type": "recent_transactions",
+      "productFilter": "remittances",
+      "maxItems": 5
+    }
   ],
   "tools": [
     {
-      "name": "get_exchange_rate",
+      "name": "start_flow_send_money",
       "description": {
-        "en": "Checks the current exchange rate for transfers to Mexico or other countries.",
-        "es": "Consulta la tasa de cambio actual para envíos a México u otros países."
+        "en": "Start the send money flow to guide the user through sending a remittance.",
+        "es": "Iniciar el flujo de envío de dinero para guiar al usuario."
+      },
+      "parameters": [],
+      "side_effects": "flow",
+      "requires_confirmation": false,
+      "starts_flow": "send_money_flow"
+    },
+    {
+      "name": "start_flow_add_recipient",
+      "description": {
+        "en": "Start the flow to add a new recipient.",
+        "es": "Iniciar el flujo para agregar un nuevo destinatario."
+      },
+      "parameters": [],
+      "side_effects": "flow",
+      "requires_confirmation": false,
+      "starts_flow": "add_recipient_flow"
+    },
+    {
+      "name": "start_flow_quick_send",
+      "description": {
+        "en": "Start the quick send flow to repeat a recent transfer.",
+        "es": "Iniciar el flujo de envío rápido para repetir un envío reciente."
+      },
+      "parameters": [],
+      "side_effects": "flow",
+      "requires_confirmation": false,
+      "starts_flow": "quick_send_flow"
+    },
+    {
+      "name": "start_flow_snpl_remittance",
+      "description": {
+        "en": "Start SNPL-funded remittance flow. Use when user has approved SNPL credit and wants to send money using that credit. Amount and payment are already handled by SNPL.",
+        "es": "Iniciar flujo de remesa con crédito SNPL. Usar cuando el usuario tiene crédito SNPL aprobado y quiere enviar dinero usando ese crédito. El monto y pago ya están manejados por SNPL."
       },
       "parameters": [
         {
-          "name": "to_currency",
+          "name": "loan_id",
+          "type": "string",
+          "required": true,
+          "description": {
+            "en": "The SNPL loan ID funding this transfer",
+            "es": "El ID del préstamo SNPL que financia esta transferencia"
+          }
+        },
+        {
+          "name": "amount_usd",
+          "type": "number",
+          "required": true,
+          "description": {
+            "en": "Amount to send (from SNPL loan)",
+            "es": "Monto a enviar (del préstamo SNPL)"
+          }
+        }
+      ],
+      "side_effects": "flow",
+      "requires_confirmation": false,
+      "starts_flow": "snpl_remittance_flow"
+    },
+    {
+      "name": "get_exchange_rate",
+      "description": {
+        "en": "Checks the current exchange rate for transfers to a specific country.",
+        "es": "Consulta la tasa de cambio actual para envíos a un país específico."
+      },
+      "parameters": [
+        {
+          "name": "country",
           "type": "string",
           "required": false,
           "description": {
-            "en": "Destination currency (MXN, GTQ, COP, etc.). Default MXN.",
-            "es": "Moneda destino (MXN, GTQ, COP, etc.). Por defecto MXN."
+            "en": "Country code (MX, GT, HN, CO, DO, SV, NI). Default MX.",
+            "es": "Código de país (MX, GT, HN, CO, DO, SV, NI). Por defecto MX."
           }
         }
       ],
@@ -45,20 +119,129 @@
       "requires_confirmation": false
     },
     {
-      "name": "get_recipients",
+      "name": "list_recipients",
       "description": {
         "en": "Gets the user's saved recipients list.",
         "es": "Obtiene la lista de destinatarios guardados del usuario."
+      },
+      "parameters": [
+        {
+          "name": "country",
+          "type": "string",
+          "required": false,
+          "description": {
+            "en": "Filter by country code (MX, GT, HN, CO, DO, SV, NI).",
+            "es": "Filtrar por código de país (MX, GT, HN, CO, DO, SV, NI)."
+          }
+        }
+      ],
+      "side_effects": "read",
+      "requires_confirmation": false
+    },
+    {
+      "name": "get_recipient",
+      "description": {
+        "en": "Gets details for a specific recipient.",
+        "es": "Obtiene los detalles de un destinatario específico."
+      },
+      "parameters": [
+        {
+          "name": "recipient_id",
+          "type": "string",
+          "required": true,
+          "description": {
+            "en": "The recipient's ID.",
+            "es": "El ID del destinatario."
+          }
+        }
+      ],
+      "side_effects": "read",
+      "requires_confirmation": false
+    },
+    {
+      "name": "get_delivery_methods",
+      "description": {
+        "en": "Gets available delivery methods for a country (bank, cash, wallet, debit).",
+        "es": "Obtiene los métodos de entrega disponibles para un país (banco, efectivo, billetera, débito)."
+      },
+      "parameters": [
+        {
+          "name": "country",
+          "type": "string",
+          "required": true,
+          "description": {
+            "en": "Country code (MX, GT, HN, CO, DO, SV, NI).",
+            "es": "Código de país (MX, GT, HN, CO, DO, SV, NI)."
+          }
+        }
+      ],
+      "side_effects": "read",
+      "requires_confirmation": false
+    },
+    {
+      "name": "get_user_limits",
+      "description": {
+        "en": "Gets the user's sending limits based on their KYC level.",
+        "es": "Obtiene los límites de envío del usuario según su nivel de verificación."
       },
       "parameters": [],
       "side_effects": "read",
       "requires_confirmation": false
     },
     {
-      "name": "calculate_transfer",
+      "name": "get_transfer_status",
       "description": {
-        "en": "Calculates transfer details including fees and amount the recipient will receive.",
-        "es": "Calcula los detalles de un envío incluyendo fees y cantidad que recibirá el destinatario."
+        "en": "Checks the status of a specific transfer.",
+        "es": "Consulta el estado de un envío específico."
+      },
+      "parameters": [
+        {
+          "name": "transfer_id",
+          "type": "string",
+          "required": true,
+          "description": {
+            "en": "The transfer ID to check.",
+            "es": "El ID del envío a consultar."
+          }
+        }
+      ],
+      "side_effects": "read",
+      "requires_confirmation": false
+    },
+    {
+      "name": "list_transfers",
+      "description": {
+        "en": "Gets the user's recent transfer history.",
+        "es": "Obtiene el historial de envíos recientes del usuario."
+      },
+      "parameters": [
+        {
+          "name": "limit",
+          "type": "number",
+          "required": false,
+          "description": {
+            "en": "Maximum number of transfers to show. Default 5.",
+            "es": "Número máximo de envíos a mostrar. Por defecto 5."
+          }
+        },
+        {
+          "name": "status",
+          "type": "string",
+          "required": false,
+          "description": {
+            "en": "Filter by status (COMPLETED, PROCESSING, CANCELLED).",
+            "es": "Filtrar por estado (COMPLETED, PROCESSING, CANCELLED)."
+          }
+        }
+      ],
+      "side_effects": "read",
+      "requires_confirmation": false
+    },
+    {
+      "name": "create_quote",
+      "description": {
+        "en": "Creates a full quote with fees, exchange rate, and amount recipient will receive.",
+        "es": "Crea una cotización completa con comisiones, tipo de cambio y cantidad que recibirá el destinatario."
       },
       "parameters": [
         {
@@ -66,17 +249,26 @@
           "type": "number",
           "required": true,
           "description": {
-            "en": "Amount to send in USD",
-            "es": "Cantidad a enviar en USD"
+            "en": "Amount to send in USD.",
+            "es": "Cantidad a enviar en USD."
           }
         },
         {
-          "name": "to_currency",
+          "name": "country",
           "type": "string",
           "required": false,
           "description": {
-            "en": "Destination currency. Default MXN.",
-            "es": "Moneda destino. Por defecto MXN."
+            "en": "Destination country code. Default MX.",
+            "es": "Código del país destino. Por defecto MX."
+          }
+        },
+        {
+          "name": "delivery_type",
+          "type": "string",
+          "required": false,
+          "description": {
+            "en": "Delivery method (BANK, CASH, WALLET, DEBIT). Default BANK.",
+            "es": "Método de entrega (BANK, CASH, WALLET, DEBIT). Por defecto BANK."
           }
         }
       ],
@@ -95,8 +287,8 @@
           "type": "string",
           "required": true,
           "description": {
-            "en": "Recipient ID",
-            "es": "ID del destinatario"
+            "en": "The recipient's ID.",
+            "es": "El ID del destinatario."
           }
         },
         {
@@ -104,8 +296,17 @@
           "type": "number",
           "required": true,
           "description": {
-            "en": "Amount to send in USD",
-            "es": "Cantidad a enviar en USD"
+            "en": "Amount to send in USD.",
+            "es": "Cantidad a enviar en USD."
+          }
+        },
+        {
+          "name": "delivery_method_id",
+          "type": "string",
+          "required": false,
+          "description": {
+            "en": "Specific delivery method ID. Uses default if not provided.",
+            "es": "ID del método de entrega específico. Usa el predeterminado si no se proporciona."
           }
         },
         {
@@ -113,57 +314,1293 @@
           "type": "string",
           "required": false,
           "description": {
-            "en": "Payment method ID to use",
-            "es": "ID del método de pago a usar"
+            "en": "Payment method ID to use.",
+            "es": "ID del método de pago a usar."
           }
         }
       ],
       "requires_confirmation": true,
       "confirmation_template": {
-        "en": "Confirm sending ${amount_usd} USD?\n\nThe recipient will receive the equivalent in Mexican pesos\nWill be charged to your default payment method\nEstimated arrival: approximately 2 hours",
-        "es": "¿Confirmas enviar ${amount_usd} USD?\n\nEl destinatario recibirá el equivalente en pesos mexicanos\nSe cargará a tu método de pago predeterminado\nLlegada estimada: en aproximadamente 2 horas"
+        "en": "Confirm sending ${amount_usd} USD to {recipient_name}?\n\nThey will receive the equivalent in {currency}\nWill be charged to your default payment method\nEstimated arrival: {eta}",
+        "es": "¿Confirmas enviar ${amount_usd} USD a {recipient_name}?\n\nRecibirá el equivalente en {currency}\nSe cargará a tu método de pago predeterminado\nLlegada estimada: {eta}"
       },
-      "side_effects": "financial"
+      "side_effects": "financial",
+      "flow_transition": {
+        "onSuccess": "completed",
+        "onError": "error_state"
+      }
     },
     {
-      "name": "get_transfer_status",
+      "name": "cancel_transfer",
       "description": {
-        "en": "Checks the status of an existing transfer.",
-        "es": "Consulta el estado de un envío existente."
+        "en": "Cancels a pending transfer if eligible.",
+        "es": "Cancela un envío pendiente si es elegible."
       },
       "parameters": [
         {
           "name": "transfer_id",
           "type": "string",
-          "required": false,
+          "required": true,
           "description": {
-            "en": "Transfer ID. If not provided, shows recent transfers.",
-            "es": "ID del envío. Si no se proporciona, muestra envíos recientes."
+            "en": "The transfer ID to cancel.",
+            "es": "El ID del envío a cancelar."
           }
         }
       ],
-      "side_effects": "read",
-      "requires_confirmation": false
+      "requires_confirmation": true,
+      "confirmation_template": {
+        "en": "Cancel transfer {transfer_id}?\n\nRefund will arrive in 3-5 business days.",
+        "es": "¿Cancelar envío {transfer_id}?\n\nEl reembolso llegará en 3-5 días hábiles."
+      },
+      "side_effects": "financial"
     },
     {
-      "name": "get_recent_transfers",
+      "name": "create_snpl_transfer",
       "description": {
-        "en": "Gets the user's recent transfers.",
-        "es": "Obtiene los envíos recientes del usuario."
+        "en": "Creates a remittance transfer funded by SNPL credit. No additional payment needed.",
+        "es": "Crea una transferencia de remesa financiada por crédito SNPL. No requiere pago adicional."
       },
       "parameters": [
         {
-          "name": "limit",
+          "name": "snpl_loan_id",
+          "type": "string",
+          "required": true,
+          "description": {
+            "en": "The SNPL loan ID funding this transfer",
+            "es": "El ID del préstamo SNPL que financia esta transferencia"
+          }
+        },
+        {
+          "name": "recipient_id",
+          "type": "string",
+          "required": true,
+          "description": {
+            "en": "The recipient's ID",
+            "es": "El ID del destinatario"
+          }
+        },
+        {
+          "name": "amount_usd",
           "type": "number",
+          "required": true,
+          "description": {
+            "en": "Amount to send in USD (from SNPL loan)",
+            "es": "Monto a enviar en USD (del préstamo SNPL)"
+          }
+        },
+        {
+          "name": "delivery_method_id",
+          "type": "string",
           "required": false,
           "description": {
-            "en": "Maximum number of transfers to show. Default 5.",
-            "es": "Número máximo de envíos a mostrar. Por defecto 5."
+            "en": "Specific delivery method ID. Uses default if not provided.",
+            "es": "ID del método de entrega específico. Usa el predeterminado si no se proporciona."
           }
         }
       ],
-      "side_effects": "read",
+      "requires_confirmation": true,
+      "confirmation_template": {
+        "en": "Confirm sending ${amount_usd} USD to {recipient_name} using your SNPL credit?\n\nThey will receive the equivalent in {currency}\nFunded by: SNPL Loan {snpl_loan_id}",
+        "es": "¿Confirmas enviar ${amount_usd} USD a {recipient_name} usando tu crédito SNPL?\n\nRecibirá el equivalente en {currency}\nFinanciado por: Préstamo SNPL {snpl_loan_id}"
+      },
+      "side_effects": "financial",
+      "flow_transition": {
+        "onSuccess": "completed",
+        "onError": "error_state"
+      }
+    },
+    {
+      "name": "save_recipient",
+      "description": {
+        "en": "Saves a new recipient with their delivery method.",
+        "es": "Guarda un nuevo destinatario con su método de entrega."
+      },
+      "parameters": [
+        {
+          "name": "first_name",
+          "type": "string",
+          "required": true,
+          "description": {
+            "en": "Recipient's first name.",
+            "es": "Nombre del destinatario."
+          }
+        },
+        {
+          "name": "last_name",
+          "type": "string",
+          "required": true,
+          "description": {
+            "en": "Recipient's last name.",
+            "es": "Apellido del destinatario."
+          }
+        },
+        {
+          "name": "country",
+          "type": "string",
+          "required": true,
+          "description": {
+            "en": "Country code (MX, GT, HN, CO, DO, SV, NI).",
+            "es": "Código de país."
+          }
+        },
+        {
+          "name": "delivery_type",
+          "type": "string",
+          "required": true,
+          "description": {
+            "en": "Delivery method type (BANK, CASH, WALLET, DEBIT).",
+            "es": "Tipo de método de entrega."
+          }
+        },
+        {
+          "name": "bank_name",
+          "type": "string",
+          "required": false,
+          "description": {
+            "en": "Bank name.",
+            "es": "Nombre del banco."
+          }
+        },
+        {
+          "name": "clabe",
+          "type": "string",
+          "required": false,
+          "description": {
+            "en": "CLABE (18 digits).",
+            "es": "CLABE (18 dígitos)."
+          }
+        },
+        {
+          "name": "account_number",
+          "type": "string",
+          "required": false,
+          "description": {
+            "en": "Account number.",
+            "es": "Número de cuenta."
+          }
+        },
+        {
+          "name": "account_type",
+          "type": "string",
+          "required": false,
+          "description": {
+            "en": "Account type.",
+            "es": "Tipo de cuenta."
+          }
+        },
+        {
+          "name": "wallet_type",
+          "type": "string",
+          "required": false,
+          "description": {
+            "en": "Wallet type.",
+            "es": "Tipo de billetera."
+          }
+        },
+        {
+          "name": "phone_number",
+          "type": "string",
+          "required": false,
+          "description": {
+            "en": "Phone number.",
+            "es": "Número de teléfono."
+          }
+        },
+        {
+          "name": "card_number",
+          "type": "string",
+          "required": false,
+          "description": {
+            "en": "Card number.",
+            "es": "Número de tarjeta."
+          }
+        },
+        {
+          "name": "city",
+          "type": "string",
+          "required": false,
+          "description": {
+            "en": "City.",
+            "es": "Ciudad."
+          }
+        },
+        {
+          "name": "state",
+          "type": "string",
+          "required": false,
+          "description": {
+            "en": "State.",
+            "es": "Estado."
+          }
+        }
+      ],
+      "requires_confirmation": true,
+      "confirmation_template": {
+        "en": "Save {first_name} {last_name} as a recipient?\n\nCountry: {country}\nDelivery: {delivery_type}",
+        "es": "¿Guardar a {first_name} {last_name} como destinatario?\n\nPaís: {country}\nEntrega: {delivery_type}"
+      },
+      "side_effects": "write"
+    },
+    {
+      "name": "save_delivery_method",
+      "description": {
+        "en": "Adds a new delivery method to an existing recipient.",
+        "es": "Agrega un nuevo método de entrega a un destinatario existente."
+      },
+      "parameters": [
+        {
+          "name": "recipient_id",
+          "type": "string",
+          "required": true,
+          "description": {
+            "en": "Recipient ID.",
+            "es": "ID del destinatario."
+          }
+        },
+        {
+          "name": "delivery_type",
+          "type": "string",
+          "required": true,
+          "description": {
+            "en": "Delivery type.",
+            "es": "Tipo de entrega."
+          }
+        },
+        {
+          "name": "bank_name",
+          "type": "string",
+          "required": false,
+          "description": {
+            "en": "Bank name.",
+            "es": "Nombre del banco."
+          }
+        },
+        {
+          "name": "clabe",
+          "type": "string",
+          "required": false,
+          "description": {
+            "en": "CLABE.",
+            "es": "CLABE."
+          }
+        },
+        {
+          "name": "account_number",
+          "type": "string",
+          "required": false,
+          "description": {
+            "en": "Account number.",
+            "es": "Número de cuenta."
+          }
+        },
+        {
+          "name": "account_type",
+          "type": "string",
+          "required": false,
+          "description": {
+            "en": "Account type.",
+            "es": "Tipo de cuenta."
+          }
+        },
+        {
+          "name": "wallet_type",
+          "type": "string",
+          "required": false,
+          "description": {
+            "en": "Wallet type.",
+            "es": "Tipo de billetera."
+          }
+        },
+        {
+          "name": "phone_number",
+          "type": "string",
+          "required": false,
+          "description": {
+            "en": "Phone number.",
+            "es": "Teléfono."
+          }
+        },
+        {
+          "name": "card_number",
+          "type": "string",
+          "required": false,
+          "description": {
+            "en": "Card number.",
+            "es": "Número de tarjeta."
+          }
+        },
+        {
+          "name": "city",
+          "type": "string",
+          "required": false,
+          "description": {
+            "en": "City.",
+            "es": "Ciudad."
+          }
+        },
+        {
+          "name": "state",
+          "type": "string",
+          "required": false,
+          "description": {
+            "en": "State.",
+            "es": "Estado."
+          }
+        }
+      ],
+      "requires_confirmation": true,
+      "confirmation_template": {
+        "en": "Add {delivery_type} as a delivery method?",
+        "es": "¿Agregar {delivery_type} como método de entrega?"
+      },
+      "side_effects": "write"
+    },
+    {
+      "name": "escalate_to_human",
+      "description": {
+        "en": "Route the conversation to a human agent.",
+        "es": "Transferir la conversación a un agente humano."
+      },
+      "parameters": [
+        {
+          "name": "reason",
+          "type": "string",
+          "required": false,
+          "description": {
+            "en": "Reason.",
+            "es": "Razón."
+          }
+        }
+      ],
+      "side_effects": "navigation",
       "requires_confirmation": false
+    },
+    {
+      "name": "go_home",
+      "description": {
+        "en": "Return to the main Felix agent.",
+        "es": "Regresar al agente principal de Felix."
+      },
+      "parameters": [],
+      "side_effects": "navigation",
+      "requires_confirmation": false
+    }
+  ],
+  "subflows": [
+    {
+      "id": "send_money_flow",
+      "name": {
+        "en": "Send Money",
+        "es": "Enviar Dinero"
+      },
+      "trigger_description": {
+        "en": "When the user wants to send a remittance",
+        "es": "Cuando el usuario quiere enviar una remesa"
+      },
+      "initial_state": "select_recipient",
+      "data_schema": {
+        "recipient_id": {
+          "type": "string",
+          "description": "Selected recipient ID"
+        },
+        "recipient_name": {
+          "type": "string",
+          "description": "Recipient display name"
+        },
+        "amount_usd": {
+          "type": "number",
+          "description": "Amount in USD"
+        },
+        "delivery_method_id": {
+          "type": "string",
+          "description": "Delivery method ID"
+        },
+        "country": {
+          "type": "string",
+          "description": "Destination country"
+        }
+      },
+      "states": [
+        {
+          "id": "select_recipient",
+          "name": {
+            "en": "Select Recipient",
+            "es": "Seleccionar Destinatario"
+          },
+          "agent_instructions": {
+            "en": "IMMEDIATELY call list_recipients as your first action - this is critical. Show all saved recipients as numbered options and tell the user they can select one or add a new recipient if needed. If user wants to add a new recipient, exit this flow and call start_flow_add_recipient.",
+            "es": "INMEDIATAMENTE llama list_recipients como tu primera acción - esto es crítico. Muestra todos los destinatarios guardados como opciones numeradas y dile al usuario que puede seleccionar uno o agregar un nuevo destinatario si lo necesita. Si el usuario quiere agregar uno nuevo, sal del flujo y llama start_flow_add_recipient."
+          },
+          "state_tools": [
+            "list_recipients",
+            "get_recipient"
+          ],
+          "transitions": [
+            {
+              "trigger": "recipient_selected",
+              "target": "collect_amount",
+              "condition": "recipient_id is not None"
+            },
+            {
+              "trigger": "wants_new_recipient",
+              "target": "exit"
+            }
+          ],
+          "on_enter": null,
+          "is_final": false
+        },
+        {
+          "id": "collect_amount",
+          "name": {
+            "en": "Collect Amount",
+            "es": "Recolectar Monto"
+          },
+          "agent_instructions": {
+            "en": "Ask user how much they want to send in USD. Use get_exchange_rate and create_quote to show full breakdown. Validate against limits with get_user_limits.",
+            "es": "Pregunta cuánto quiere enviar en USD. Usa get_exchange_rate y create_quote para el desglose. Valida contra límites con get_user_limits."
+          },
+          "state_tools": [
+            "get_exchange_rate",
+            "create_quote",
+            "get_user_limits"
+          ],
+          "transitions": [
+            {
+              "trigger": "valid_amount",
+              "target": "select_delivery_method",
+              "condition": "amount_usd > 0"
+            }
+          ],
+          "on_enter": {
+            "message": {
+              "en": "How much would you like to send to {recipient_name}?",
+              "es": "¿Cuánto te gustaría enviar a {recipient_name}?"
+            }
+          },
+          "is_final": false
+        },
+        {
+          "id": "select_delivery_method",
+          "name": {
+            "en": "Select Delivery Method",
+            "es": "Seleccionar Método de Entrega"
+          },
+          "agent_instructions": {
+            "en": "Show the recipient's saved delivery methods using get_recipient. If they only have one, confirm using it. If cash is selected, move to collect_location.",
+            "es": "Muestra los métodos de entrega del destinatario usando get_recipient. Si solo tiene uno, confirma usarlo. Si es efectivo, pasa a collect_location."
+          },
+          "state_tools": [
+            "get_recipient",
+            "get_delivery_methods"
+          ],
+          "transitions": [
+            {
+              "trigger": "method_selected_not_cash",
+              "target": "review_summary"
+            },
+            {
+              "trigger": "cash_selected",
+              "target": "collect_location"
+            }
+          ],
+          "on_enter": {
+            "message": {
+              "en": "How should {recipient_name} receive the money?",
+              "es": "¿Cómo debe recibir el dinero {recipient_name}?"
+            }
+          },
+          "is_final": false
+        },
+        {
+          "id": "collect_location",
+          "name": {
+            "en": "Collect Location",
+            "es": "Recolectar Ubicación"
+          },
+          "agent_instructions": {
+            "en": "For cash pickup, ask for the city and state where the recipient will pick up.",
+            "es": "Para retiro en efectivo, pregunta la ciudad y estado donde recogerá el destinatario."
+          },
+          "state_tools": [],
+          "transitions": [
+            {
+              "trigger": "location_provided",
+              "target": "review_summary"
+            }
+          ],
+          "on_enter": {
+            "message": {
+              "en": "What city should {recipient_name} pick up the cash in?",
+              "es": "¿En qué ciudad debe recoger el efectivo {recipient_name}?"
+            }
+          },
+          "is_final": false
+        },
+        {
+          "id": "review_summary",
+          "name": {
+            "en": "Review Summary",
+            "es": "Revisar Resumen"
+          },
+          "agent_instructions": {
+            "en": "Display the complete transfer summary and ask user to confirm. Use create_quote to get fresh numbers.",
+            "es": "Muestra el resumen completo y pide confirmación. Usa create_quote para números frescos."
+          },
+          "state_tools": [
+            "create_quote"
+          ],
+          "transitions": [
+            {
+              "trigger": "user_confirms",
+              "target": "generate_payment"
+            },
+            {
+              "trigger": "user_wants_modification",
+              "target": "collect_amount"
+            },
+            {
+              "trigger": "user_cancels",
+              "target": "error_state"
+            }
+          ],
+          "on_enter": {
+            "message": {
+              "en": "Here's your transfer summary. Please review and confirm.",
+              "es": "Aquí está el resumen de tu envío. Por favor revisa y confirma."
+            }
+          },
+          "is_final": false
+        },
+        {
+          "id": "generate_payment",
+          "name": {
+            "en": "Generate Payment",
+            "es": "Generar Pago"
+          },
+          "agent_instructions": {
+            "en": "Call create_transfer with the collected data. The tool requires confirmation.",
+            "es": "Llama create_transfer con los datos recolectados. La herramienta requiere confirmación."
+          },
+          "state_tools": [
+            "create_transfer"
+          ],
+          "transitions": [
+            {
+              "trigger": "transfer_success",
+              "target": "completed"
+            },
+            {
+              "trigger": "transfer_error",
+              "target": "error_state"
+            }
+          ],
+          "on_enter": null,
+          "is_final": false
+        },
+        {
+          "id": "completed",
+          "name": {
+            "en": "Completed",
+            "es": "Completado"
+          },
+          "agent_instructions": {
+            "en": "Transfer was successful. Use go_home to return to main agent.",
+            "es": "El envío fue exitoso. Usa go_home para regresar al agente principal."
+          },
+          "state_tools": [
+            "go_home"
+          ],
+          "transitions": [],
+          "on_enter": {
+            "message": {
+              "en": "Your transfer is being processed! Is there anything else I can help you with?",
+              "es": "¡Tu envío está siendo procesado! ¿Hay algo más en lo que pueda ayudarte?"
+            }
+          },
+          "is_final": true
+        },
+        {
+          "id": "error_state",
+          "name": {
+            "en": "Error",
+            "es": "Error"
+          },
+          "agent_instructions": {
+            "en": "Something went wrong. Offer to retry or escalate.",
+            "es": "Algo salió mal. Ofrece reintentar o escalar."
+          },
+          "state_tools": [
+            "escalate_to_human"
+          ],
+          "transitions": [
+            {
+              "trigger": "retry",
+              "target": "select_recipient"
+            }
+          ],
+          "on_enter": {
+            "message": {
+              "en": "I'm sorry, there was an issue. Would you like to try again or speak with support?",
+              "es": "Lo siento, hubo un problema. ¿Quieres intentar de nuevo o hablar con soporte?"
+            }
+          },
+          "is_final": false
+        }
+      ]
+    },
+    {
+      "id": "add_recipient_flow",
+      "name": {
+        "en": "Add Recipient",
+        "es": "Agregar Destinatario"
+      },
+      "trigger_description": {
+        "en": "When the user wants to add a new recipient",
+        "es": "Cuando el usuario quiere agregar un nuevo destinatario"
+      },
+      "initial_state": "collect_name",
+      "data_schema": {
+        "first_name": {
+          "type": "string"
+        },
+        "last_name": {
+          "type": "string"
+        },
+        "country": {
+          "type": "string"
+        },
+        "delivery_type": {
+          "type": "string"
+        }
+      },
+      "states": [
+        {
+          "id": "collect_name",
+          "name": {
+            "en": "Collect Name",
+            "es": "Recolectar Nombre"
+          },
+          "agent_instructions": {
+            "en": "Ask for the recipient's first and last name.",
+            "es": "Pide el nombre y apellido del destinatario."
+          },
+          "state_tools": [],
+          "transitions": [
+            {
+              "trigger": "name_provided",
+              "target": "select_country"
+            }
+          ],
+          "on_enter": {
+            "message": {
+              "en": "Let's add a new recipient. What's their full name?",
+              "es": "Vamos a agregar un nuevo destinatario. ¿Cuál es su nombre completo?"
+            }
+          },
+          "is_final": false
+        },
+        {
+          "id": "select_country",
+          "name": {
+            "en": "Select Country",
+            "es": "Seleccionar País"
+          },
+          "agent_instructions": {
+            "en": "Ask which country the recipient lives in. We support: Mexico (MX), Guatemala (GT), Honduras (HN), Colombia (CO), Dominican Republic (DO), El Salvador (SV), Nicaragua (NI).",
+            "es": "Pregunta en qué país vive el destinatario. Soportamos: México, Guatemala, Honduras, Colombia, República Dominicana, El Salvador, Nicaragua."
+          },
+          "state_tools": [
+            "get_delivery_methods"
+          ],
+          "transitions": [
+            {
+              "trigger": "country_selected",
+              "target": "select_delivery_type"
+            }
+          ],
+          "on_enter": {
+            "message": {
+              "en": "What country does {first_name} live in? We support Mexico, Guatemala, Honduras, Colombia, Dominican Republic, El Salvador, and Nicaragua.",
+              "es": "¿En qué país vive {first_name}? Soportamos México, Guatemala, Honduras, Colombia, República Dominicana, El Salvador y Nicaragua."
+            }
+          },
+          "is_final": false
+        },
+        {
+          "id": "select_delivery_type",
+          "name": {
+            "en": "Select Delivery Type",
+            "es": "Seleccionar Tipo de Entrega"
+          },
+          "agent_instructions": {
+            "en": "Use get_delivery_methods for the selected country and show available options.",
+            "es": "Usa get_delivery_methods para el país seleccionado y muestra opciones disponibles."
+          },
+          "state_tools": [
+            "get_delivery_methods"
+          ],
+          "transitions": [
+            {
+              "trigger": "delivery_type_selected",
+              "target": "collect_delivery_details"
+            }
+          ],
+          "on_enter": {
+            "message": {
+              "en": "How will {first_name} receive money?",
+              "es": "¿Cómo recibirá el dinero {first_name}?"
+            }
+          },
+          "is_final": false
+        },
+        {
+          "id": "collect_delivery_details",
+          "name": {
+            "en": "Collect Details",
+            "es": "Recolectar Detalles"
+          },
+          "agent_instructions": {
+            "en": "Collect the required information based on delivery type:\n- BANK (MX): CLABE or bank + account\n- BANK (CO): Bank, account, type\n- WALLET: wallet type + phone\n- DEBIT: card number\n- CASH: move to collect_location",
+            "es": "Recolecta la información según el tipo:\n- BANK (MX): CLABE o banco + cuenta\n- BANK (CO): Banco, cuenta, tipo\n- WALLET: tipo + teléfono\n- DEBIT: número de tarjeta\n- CASH: pasa a collect_location"
+          },
+          "state_tools": [],
+          "transitions": [
+            {
+              "trigger": "details_collected",
+              "target": "confirm_recipient"
+            },
+            {
+              "trigger": "cash_type",
+              "target": "collect_location"
+            }
+          ],
+          "on_enter": {
+            "message": {
+              "en": "I'll need some details for {delivery_type} delivery.",
+              "es": "Necesitaré algunos detalles para la entrega por {delivery_type}."
+            }
+          },
+          "is_final": false
+        },
+        {
+          "id": "collect_location",
+          "name": {
+            "en": "Collect Location",
+            "es": "Recolectar Ubicación"
+          },
+          "agent_instructions": {
+            "en": "For cash pickup, ask for city and state.",
+            "es": "Para efectivo, pide ciudad y estado."
+          },
+          "state_tools": [],
+          "transitions": [
+            {
+              "trigger": "location_provided",
+              "target": "confirm_recipient"
+            }
+          ],
+          "on_enter": {
+            "message": {
+              "en": "What city and state should {first_name} pick up the cash in?",
+              "es": "¿En qué ciudad y estado debe recoger el efectivo {first_name}?"
+            }
+          },
+          "is_final": false
+        },
+        {
+          "id": "confirm_recipient",
+          "name": {
+            "en": "Confirm Recipient",
+            "es": "Confirmar Destinatario"
+          },
+          "agent_instructions": {
+            "en": "Show a summary and call save_recipient with all collected data.",
+            "es": "Muestra un resumen y llama save_recipient con todos los datos."
+          },
+          "state_tools": [
+            "save_recipient"
+          ],
+          "transitions": [
+            {
+              "trigger": "confirmed",
+              "target": "completed"
+            },
+            {
+              "trigger": "wants_modification",
+              "target": "collect_name"
+            }
+          ],
+          "on_enter": {
+            "message": {
+              "en": "Here's the new recipient information. Please confirm to save.",
+              "es": "Aquí está la información del nuevo destinatario. Por favor confirma para guardar."
+            }
+          },
+          "is_final": false
+        },
+        {
+          "id": "completed",
+          "name": {
+            "en": "Completed",
+            "es": "Completado"
+          },
+          "agent_instructions": {
+            "en": "Recipient saved. Offer to send money now or go home.",
+            "es": "Destinatario guardado. Ofrece enviar dinero ahora o ir a inicio."
+          },
+          "state_tools": [
+            "start_flow_send_money",
+            "go_home"
+          ],
+          "transitions": [],
+          "on_enter": {
+            "message": {
+              "en": "{first_name} {last_name} has been saved! Would you like to send money to them now?",
+              "es": "¡{first_name} {last_name} ha sido guardado! ¿Quieres enviarle dinero ahora?"
+            }
+          },
+          "is_final": true
+        }
+      ]
+    },
+    {
+      "id": "quick_send_flow",
+      "name": {
+        "en": "Quick Send",
+        "es": "Envío Rápido"
+      },
+      "trigger_description": {
+        "en": "When the user wants to repeat a recent transfer",
+        "es": "Cuando el usuario quiere repetir un envío reciente"
+      },
+      "initial_state": "show_quick_options",
+      "states": [
+        {
+          "id": "show_quick_options",
+          "name": {
+            "en": "Show Options",
+            "es": "Mostrar Opciones"
+          },
+          "agent_instructions": {
+            "en": "Use list_transfers to get recent completed transfers. Present as numbered options.",
+            "es": "Usa list_transfers para obtener envíos completados recientes. Preséntalos como opciones."
+          },
+          "state_tools": [
+            "list_transfers"
+          ],
+          "transitions": [
+            {
+              "trigger": "transfer_selected",
+              "target": "confirm_quick_send"
+            },
+            {
+              "trigger": "no_transfers",
+              "target": "exit"
+            }
+          ],
+          "on_enter": {
+            "message": {
+              "en": "Which transfer would you like to repeat?",
+              "es": "¿Cuál envío te gustaría repetir?"
+            }
+          },
+          "is_final": false
+        },
+        {
+          "id": "confirm_quick_send",
+          "name": {
+            "en": "Confirm Quick Send",
+            "es": "Confirmar Envío Rápido"
+          },
+          "agent_instructions": {
+            "en": "Show pre-filled details. Use create_quote for current rate, then create_transfer.",
+            "es": "Muestra detalles prellenados. Usa create_quote para tasa actual, luego create_transfer."
+          },
+          "state_tools": [
+            "create_quote",
+            "create_transfer"
+          ],
+          "transitions": [
+            {
+              "trigger": "confirmed",
+              "target": "completed"
+            },
+            {
+              "trigger": "wants_modification",
+              "target": "exit"
+            },
+            {
+              "trigger": "cancelled",
+              "target": "exit"
+            }
+          ],
+          "on_enter": {
+            "message": {
+              "en": "Send ${amount_usd} USD to {recipient_name} again?",
+              "es": "¿Enviar ${amount_usd} USD a {recipient_name} de nuevo?"
+            }
+          },
+          "is_final": false
+        },
+        {
+          "id": "completed",
+          "name": {
+            "en": "Completed",
+            "es": "Completado"
+          },
+          "agent_instructions": {
+            "en": "Quick send successful. Call go_home.",
+            "es": "Envío rápido exitoso. Llama go_home."
+          },
+          "state_tools": [
+            "go_home"
+          ],
+          "transitions": [],
+          "on_enter": {
+            "message": {
+              "en": "Your transfer is being processed! Is there anything else I can help you with?",
+              "es": "¡Tu envío está siendo procesado! ¿Hay algo más en lo que pueda ayudarte?"
+            }
+          },
+          "is_final": true
+        }
+      ]
+    },
+    {
+      "id": "snpl_remittance_flow",
+      "name": {
+        "en": "SNPL Remittance",
+        "es": "Remesa SNPL"
+      },
+      "trigger_description": {
+        "en": "When the user wants to send money using their approved SNPL credit",
+        "es": "Cuando el usuario quiere enviar dinero usando su crédito SNPL aprobado"
+      },
+      "initial_state": "confirm_snpl_amount",
+      "data_schema": {
+        "snpl_loan_id": {
+          "type": "string",
+          "description": "SNPL loan ID funding this transfer"
+        },
+        "amount_usd": {
+          "type": "number",
+          "description": "Amount in USD (from SNPL)"
+        },
+        "recipient_id": {
+          "type": "string",
+          "description": "Selected recipient ID"
+        },
+        "recipient_name": {
+          "type": "string",
+          "description": "Recipient display name"
+        },
+        "delivery_method_id": {
+          "type": "string",
+          "description": "Delivery method ID"
+        },
+        "country": {
+          "type": "string",
+          "description": "Destination country"
+        }
+      },
+      "timeout_config": {
+        "durationMinutes": 15,
+        "onTimeout": "abandon",
+        "reminderMessage": {
+          "en": "Your SNPL transfer is still in progress. Would you like to continue?",
+          "es": "Tu transferencia SNPL sigue en progreso. ¿Deseas continuar?"
+        }
+      },
+      "states": [
+        {
+          "id": "confirm_snpl_amount",
+          "name": {
+            "en": "Confirm SNPL Amount",
+            "es": "Confirmar Monto SNPL"
+          },
+          "agent_instructions": {
+            "en": "The user is sending money using their SNPL credit. Confirm the amount they're sending (passed as flow parameter). The amount is already funded by their SNPL loan, so they don't need to pay now. Ask them to proceed to select a recipient.",
+            "es": "El usuario está enviando dinero usando su crédito SNPL. Confirma el monto que están enviando (pasado como parámetro del flujo). El monto ya está financiado por su préstamo SNPL, así que no necesitan pagar ahora. Pídeles que procedan a seleccionar un destinatario."
+          },
+          "state_tools": [],
+          "transitions": [
+            {
+              "trigger": "amount_confirmed",
+              "target": "select_recipient"
+            }
+          ],
+          "on_enter": {
+            "message": {
+              "en": "You're sending ${amount_usd} USD using your SNPL credit (Loan: {snpl_loan_id}).\n\nNo payment needed now - this is funded by your SNPL loan!\n\nLet's select who you want to send it to.",
+              "es": "Estás enviando ${amount_usd} USD usando tu crédito SNPL (Préstamo: {snpl_loan_id}).\n\n¡No necesitas pagar ahora - esto está financiado por tu préstamo SNPL!\n\nVamos a seleccionar a quién quieres enviarlo."
+            }
+          },
+          "is_final": false
+        },
+        {
+          "id": "select_recipient",
+          "name": {
+            "en": "Select Recipient",
+            "es": "Seleccionar Destinatario"
+          },
+          "agent_instructions": {
+            "en": "IMMEDIATELY call list_recipients as your first action - this is critical. Show all saved recipients as numbered options and tell the user they can select one or add a new recipient if needed. If user wants to add a new recipient, they need to exit this flow and add a recipient first, then return.",
+            "es": "INMEDIATAMENTE llama list_recipients como tu primera acción - esto es crítico. Muestra todos los destinatarios guardados como opciones numeradas y dile al usuario que puede seleccionar uno o agregar un nuevo destinatario si lo necesita. Si el usuario quiere agregar uno nuevo, necesitan salir del flujo, agregar el destinatario, y regresar."
+          },
+          "state_tools": [
+            "list_recipients",
+            "get_recipient"
+          ],
+          "transitions": [
+            {
+              "trigger": "recipient_selected",
+              "target": "select_delivery_method",
+              "condition": "recipient_id is not None"
+            },
+            {
+              "trigger": "wants_new_recipient",
+              "target": "exit_to_add_recipient"
+            }
+          ],
+          "on_enter": null,
+          "is_final": false
+        },
+        {
+          "id": "select_delivery_method",
+          "name": {
+            "en": "Select Delivery Method",
+            "es": "Seleccionar Método de Entrega"
+          },
+          "agent_instructions": {
+            "en": "Show the recipient's saved delivery methods using get_recipient. If they only have one, confirm using it. If cash is selected, move to collect_location.",
+            "es": "Muestra los métodos de entrega del destinatario usando get_recipient. Si solo tiene uno, confirma usarlo. Si es efectivo, pasa a collect_location."
+          },
+          "state_tools": [
+            "get_recipient",
+            "get_delivery_methods"
+          ],
+          "transitions": [
+            {
+              "trigger": "method_selected_not_cash",
+              "target": "review_summary"
+            },
+            {
+              "trigger": "cash_selected",
+              "target": "collect_location"
+            }
+          ],
+          "on_enter": {
+            "message": {
+              "en": "How should {recipient_name} receive the money?",
+              "es": "¿Cómo debe recibir el dinero {recipient_name}?"
+            }
+          },
+          "is_final": false
+        },
+        {
+          "id": "collect_location",
+          "name": {
+            "en": "Collect Location",
+            "es": "Recolectar Ubicación"
+          },
+          "agent_instructions": {
+            "en": "For cash pickup, ask for the city and state where the recipient will pick up.",
+            "es": "Para retiro en efectivo, pregunta la ciudad y estado donde recogerá el destinatario."
+          },
+          "state_tools": [],
+          "transitions": [
+            {
+              "trigger": "location_provided",
+              "target": "review_summary"
+            }
+          ],
+          "on_enter": {
+            "message": {
+              "en": "What city should {recipient_name} pick up the cash in?",
+              "es": "¿En qué ciudad debe recoger el efectivo {recipient_name}?"
+            }
+          },
+          "is_final": false
+        },
+        {
+          "id": "review_summary",
+          "name": {
+            "en": "Review Summary",
+            "es": "Revisar Resumen"
+          },
+          "agent_instructions": {
+            "en": "Display the complete transfer summary: amount (funded by SNPL), recipient, delivery method, exchange rate. Use get_exchange_rate to show what they'll receive. Note that there are no fees - the SNPL loan covers everything. Ask user to confirm.",
+            "es": "Muestra el resumen completo: monto (financiado por SNPL), destinatario, método de entrega, tipo de cambio. Usa get_exchange_rate para mostrar lo que recibirán. Nota que no hay comisiones - el préstamo SNPL cubre todo. Pide confirmación."
+          },
+          "state_tools": [
+            "get_exchange_rate"
+          ],
+          "transitions": [
+            {
+              "trigger": "user_confirms",
+              "target": "process_transfer"
+            },
+            {
+              "trigger": "user_wants_modification",
+              "target": "select_recipient"
+            },
+            {
+              "trigger": "user_cancels",
+              "target": "cancelled"
+            }
+          ],
+          "on_enter": {
+            "message": {
+              "en": "Here's your SNPL transfer summary. Please review and confirm.",
+              "es": "Aquí está el resumen de tu envío SNPL. Por favor revisa y confirma."
+            }
+          },
+          "is_final": false
+        },
+        {
+          "id": "process_transfer",
+          "name": {
+            "en": "Process Transfer",
+            "es": "Procesar Transferencia"
+          },
+          "agent_instructions": {
+            "en": "Call create_snpl_transfer with the snpl_loan_id, recipient_id, amount_usd, and delivery_method_id. The tool requires confirmation.",
+            "es": "Llama create_snpl_transfer con snpl_loan_id, recipient_id, amount_usd, y delivery_method_id. La herramienta requiere confirmación."
+          },
+          "state_tools": [
+            "create_snpl_transfer"
+          ],
+          "transitions": [
+            {
+              "trigger": "transfer_success",
+              "target": "completed"
+            },
+            {
+              "trigger": "transfer_error",
+              "target": "error_state"
+            }
+          ],
+          "on_enter": null,
+          "is_final": false
+        },
+        {
+          "id": "completed",
+          "name": {
+            "en": "Completed",
+            "es": "Completado"
+          },
+          "agent_instructions": {
+            "en": "SNPL transfer was successful! Remind user about their loan payment schedule. Use go_home to return to main agent.",
+            "es": "¡La transferencia SNPL fue exitosa! Recuerda al usuario sobre su calendario de pagos del préstamo. Usa go_home para regresar al agente principal."
+          },
+          "state_tools": [
+            "go_home"
+          ],
+          "transitions": [],
+          "on_enter": {
+            "message": {
+              "en": "Your SNPL transfer is being processed!\n\nRemember: Your first loan payment is due on your scheduled date. You can check your payment schedule anytime.",
+              "es": "¡Tu transferencia SNPL está siendo procesada!\n\nRecuerda: Tu primer pago del préstamo vence en la fecha programada. Puedes revisar tu calendario de pagos cuando quieras."
+            }
+          },
+          "is_final": true
+        },
+        {
+          "id": "error_state",
+          "name": {
+            "en": "Error",
+            "es": "Error"
+          },
+          "agent_instructions": {
+            "en": "Something went wrong with the transfer. Offer to retry or escalate.",
+            "es": "Algo salió mal con la transferencia. Ofrece reintentar o escalar."
+          },
+          "state_tools": [
+            "escalate_to_human",
+            "go_home"
+          ],
+          "transitions": [
+            {
+              "trigger": "retry",
+              "target": "select_recipient"
+            }
+          ],
+          "on_enter": {
+            "message": {
+              "en": "I'm sorry, there was an issue processing your transfer. Would you like to try again or speak with support?",
+              "es": "Lo siento, hubo un problema procesando tu transferencia. ¿Quieres intentar de nuevo o hablar con soporte?"
+            }
+          },
+          "is_final": false
+        },
+        {
+          "id": "exit_to_add_recipient",
+          "name": {
+            "en": "Exit to Add Recipient",
+            "es": "Salir para Agregar Destinatario"
+          },
+          "agent_instructions": {
+            "en": "User wants to add a new recipient. Let them know they need to add the recipient first, then come back to use their SNPL credit. Exit the flow.",
+            "es": "El usuario quiere agregar un nuevo destinatario. Hazle saber que necesita agregar el destinatario primero, luego regresar para usar su crédito SNPL. Sal del flujo."
+          },
+          "state_tools": [
+            "start_flow_add_recipient"
+          ],
+          "transitions": [],
+          "on_enter": {
+            "message": {
+              "en": "Let's add your new recipient first. After that, you can send them money using your SNPL credit.",
+              "es": "Vamos a agregar tu nuevo destinatario primero. Después, podrás enviarle dinero usando tu crédito SNPL."
+            }
+          },
+          "is_final": true
+        },
+        {
+          "id": "cancelled",
+          "name": {
+            "en": "Cancelled",
+            "es": "Cancelado"
+          },
+          "agent_instructions": {
+            "en": "User cancelled the SNPL transfer. Let them know their SNPL credit is still available for future use.",
+            "es": "El usuario canceló la transferencia SNPL. Hazle saber que su crédito SNPL sigue disponible para uso futuro."
+          },
+          "state_tools": [
+            "go_home"
+          ],
+          "transitions": [],
+          "on_enter": {
+            "message": {
+              "en": "No problem! Your SNPL credit is still available whenever you're ready to send money.",
+              "es": "¡No hay problema! Tu crédito SNPL sigue disponible cuando estés listo para enviar dinero."
+            }
+          },
+          "is_final": true
+        }
+      ]
+    }
+  ],
+  "response_templates": [
+    {
+      "name": {
+        "en": "Limit Exceeded",
+        "es": "Límite Excedido"
+      },
+      "trigger_config": {
+        "type": "tool_error",
+        "toolName": "create_transfer",
+        "errorCode": "LIMIT_EXCEEDED"
+      },
+      "template": {
+        "en": "This transfer exceeds your {limit_type} limit.\n\nAvailable: ${available} USD\nRequested: ${requested} USD\n\nWould you like to verify your identity to increase your limits?",
+        "es": "Este envío excede tu límite {limit_type}.\n\nDisponible: ${available} USD\nSolicitado: ${requested} USD\n\n¿Te gustaría verificar tu identidad para aumentar tus límites?"
+      },
+      "required_fields": [
+        "limit_type",
+        "available",
+        "requested"
+      ],
+      "enforcement": "mandatory"
     }
   ]
 }
