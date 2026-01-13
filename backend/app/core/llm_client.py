@@ -3,6 +3,8 @@
 import asyncio
 import json
 import logging
+import random
+import uuid
 from typing import Optional, List, Any
 from dataclasses import dataclass, field
 
@@ -21,9 +23,9 @@ settings = get_settings()
 class ToolCall:
     """Represents a tool call from the LLM."""
 
-    id: str
     name: str
     parameters: dict[str, Any]
+    id: str = field(default_factory=lambda: f"call_{uuid.uuid4().hex[:8]}")
 
 
 @dataclass
@@ -146,15 +148,21 @@ class LLMClient:
 
             except (RateLimitError, APIConnectionError) as e:
                 last_error = e
-                delay = RETRY_DELAY_BASE * (2 ** attempt)
-                logger.warning(f"LLM request failed (attempt {attempt + 1}/{MAX_RETRIES}), retrying in {delay}s: {e}")
+                # Exponential backoff with jitter to prevent thundering herd
+                base_delay = RETRY_DELAY_BASE * (2 ** attempt)
+                jitter = random.uniform(0, base_delay * 0.3)  # 0-30% jitter
+                delay = base_delay + jitter
+                logger.warning(f"LLM request failed (attempt {attempt + 1}/{MAX_RETRIES}), retrying in {delay:.2f}s: {e}")
                 await asyncio.sleep(delay)
 
             except APIStatusError as e:
                 if e.status_code >= 500:
                     last_error = e
-                    delay = RETRY_DELAY_BASE * (2 ** attempt)
-                    logger.warning(f"LLM server error (attempt {attempt + 1}/{MAX_RETRIES}), retrying in {delay}s: {e}")
+                    # Exponential backoff with jitter to prevent thundering herd
+                    base_delay = RETRY_DELAY_BASE * (2 ** attempt)
+                    jitter = random.uniform(0, base_delay * 0.3)  # 0-30% jitter
+                    delay = base_delay + jitter
+                    logger.warning(f"LLM server error (attempt {attempt + 1}/{MAX_RETRIES}), retrying in {delay:.2f}s: {e}")
                     await asyncio.sleep(delay)
                 else:
                     # Don't retry 4xx client errors

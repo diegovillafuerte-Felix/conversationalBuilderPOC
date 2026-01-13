@@ -1,17 +1,8 @@
 {
   "id": "felix",
-  "name": {
-    "en": "Felix Assistant",
-    "es": "Asistente Felix"
-  },
-  "description": {
-    "en": "I'm Felix, your assistant for sending money, top-ups, paying bills, and more.\nI'm here to help you with whatever you need. I can help you with:\n- Remittances to Mexico and Latin America\n- Mobile top-ups\n- Bill payments (electricity, phone, internet)\n- Your Felix credit line\n- Your Felix wallet",
-    "es": "Soy Felix, tu asistente para enviar dinero, recargas, pagar servicios y más.\nEstoy aquí para ayudarte con cualquier cosa que necesites. Puedo ayudarte con:\n- Remesas a México y Latinoamérica\n- Recargas de celular\n- Pago de servicios (luz, teléfono, internet)\n- Tu línea de crédito Felix\n- Tu cartera Felix"
-  },
-  "system_prompt_addition": {
-    "en": "IMPORTANT - DELEGATION RULES:\n- When the user mentions ANY topic related to a specialized agent, use the corresponding enter_* tool IMMEDIATELY\n- Do NOT ask questions to gather information - the specialized agent has flows designed for that\n- Your role is to IDENTIFY intent and DELEGATE, not solve the problem yourself\n\nImmediate delegation examples:\n- \"I want a top-up\" -> enter_topups (without asking for number or amount)\n- \"send money\" -> enter_remittances (without asking for recipient or amount)\n- \"pay electricity\" -> enter_billpay (without asking for details)\n- \"my credit\" -> enter_credit (without asking what they need)\n- \"my balance\" -> enter_wallet (without asking more)",
-    "es": "IMPORTANTE - REGLAS DE DELEGACIÓN:\n- Cuando el usuario mencione CUALQUIER tema relacionado con un agente especializado, usa la herramienta enter_* correspondiente INMEDIATAMENTE\n- NO hagas preguntas para recopilar información - el agente especializado tiene flujos diseñados para eso\n- Tu rol es IDENTIFICAR la intención y DELEGAR, no resolver el problema tú mismo\n\nEjemplos de delegación inmediata:\n- \"quiero una recarga\" -> enter_topups (sin preguntar número ni monto)\n- \"enviar dinero\" -> enter_remittances (sin preguntar destinatario ni cantidad)\n- \"pagar la luz\" -> enter_billpay (sin preguntar detalles)\n- \"mi crédito\" -> enter_credit (sin preguntar qué necesita)\n- \"mi saldo\" -> enter_wallet (sin preguntar más)"
-  },
+  "name": "Felix Assistant",
+  "description": "I'm Felix, your assistant for sending money, top-ups, paying bills, and more.\nI'm here to help you with whatever you need. I can help you with:\n- Remittances to Mexico and Latin America\n- Mobile top-ups\n- Bill payments (electricity, phone, internet)\n- Your Felix credit line\n- Your Felix wallet",
+  "system_prompt_addition": "IMPORTANT - DELEGATION RULES:\n- When the user mentions ANY topic related to a specialized agent, use the corresponding enter_* tool IMMEDIATELY\n- Do NOT ask questions to gather information - the specialized agent has flows designed for that\n- Your role is to IDENTIFY intent and DELEGATE, not solve the problem yourself\n\nImmediate delegation examples:\n- \"I want a top-up\" -> enter_topups IMMEDIATELY (without asking for number or amount)\n- \"send money\" -> enter_remittances IMMEDIATELY (without asking for recipient or amount)\n- \"my credit\" -> enter_credit IMMEDIATELY (without asking what they need)",
   "model_config": {
     "model": "gpt-4o",
     "temperature": 0.7,
@@ -26,69 +17,43 @@
   "tools": [
     {
       "name": "enter_remittances",
-      "description": {
-        "en": "Use this tool when the user wants to send money, check previous transfers, see exchange rates, or anything related to remittances.",
-        "es": "Usa esta herramienta cuando el usuario quiera enviar dinero, consultar envíos anteriores, ver tasas de cambio, o cualquier cosa relacionada con remesas."
-      },
+      "description": "Use this tool when the user wants to send money, check previous transfers, see exchange rates, or anything related to remittances.",
       "parameters": [],
       "side_effects": "none",
-      "requires_confirmation": false
+      "requires_confirmation": false,
+      "routing": {
+        "type": "enter_agent",
+        "target": "remittances"
+      }
     },
     {
       "name": "enter_credit",
-      "description": {
-        "en": "Use this tool when the user asks about their credit line, making payments to their credit, or seeing credit offers.",
-        "es": "Usa esta herramienta cuando el usuario pregunte sobre su línea de crédito, hacer pagos a su crédito, o ver ofertas de crédito."
-      },
+      "description": "Use this tool when the user mentions: Send Now Pay Later, SNPL, credit for remittance, loan to send money, pay later, financing a transfer, or anything about borrowing money to send. Also for checking loan status, making loan payments, or asking about SNPL eligibility.",
       "parameters": [],
       "side_effects": "none",
-      "requires_confirmation": false
-    },
-    {
-      "name": "enter_wallet",
-      "description": {
-        "en": "Use this tool when the user wants to see their balance, add funds, or manage their payment methods.",
-        "es": "Usa esta herramienta cuando el usuario quiera ver su saldo, agregar fondos, o manejar sus métodos de pago."
-      },
-      "parameters": [],
-      "side_effects": "none",
-      "requires_confirmation": false
+      "requires_confirmation": false,
+      "routing": {"type": "enter_agent", "target": "snpl"}
     },
     {
       "name": "enter_topups",
-      "description": {
-        "en": "DELEGATE IMMEDIATELY when the user mentions: top-up, recharge, phone balance, airtime, or phone credit. Do NOT ask for number or amount - the specialist has a flow for that.",
-        "es": "DELEGAR INMEDIATAMENTE cuando el usuario mencione: recarga, recargar, saldo de celular, tiempo aire, o crédito telefónico. NO preguntes número ni monto - el especialista tiene un flujo para eso."
-      },
+      "description": "DELEGATE IMMEDIATELY when the user mentions: top-up, recharge, phone balance, airtime, or phone credit. Do NOT ask for number or amount - the specialist has a flow for that.",
       "parameters": [],
       "side_effects": "none",
-      "requires_confirmation": false
-    },
-    {
-      "name": "enter_billpay",
-      "description": {
-        "en": "Use this tool when the user wants to pay a service like electricity, phone, internet, etc.",
-        "es": "Usa esta herramienta cuando el usuario quiera pagar un servicio como luz, teléfono, internet, etc."
-      },
-      "parameters": [],
-      "side_effects": "none",
-      "requires_confirmation": false
+      "requires_confirmation": false,
+      "routing": {
+        "type": "enter_agent",
+        "target": "topups"
+      }
     },
     {
       "name": "change_language",
-      "description": {
-        "en": "Use this tool when the user wants to change the conversation language to English or Spanish. Only use when explicitly requested.",
-        "es": "Usa esta herramienta cuando el usuario quiera cambiar el idioma de la conversación a inglés o español. Solo usa cuando se solicite explícitamente."
-      },
+      "description": "Use this tool when the user wants to change the conversation language to English or Spanish. Only use when explicitly requested.",
       "parameters": [
         {
           "name": "language",
           "type": "string",
           "required": true,
-          "description": {
-            "en": "Target language code: 'es' for Spanish or 'en' for English",
-            "es": "Código de idioma destino: 'es' para español o 'en' para inglés"
-          }
+          "description": "Target language code: 'es' for Spanish or 'en' for English"
         }
       ],
       "side_effects": "none",

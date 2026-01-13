@@ -23,6 +23,7 @@ from app.schemas.chat import (
     UserContextResponse,
     DebugInfo,
     DebugLLMCall,
+    ShadowMessageInfo,
 )
 from app.core.orchestrator import Orchestrator
 from app.models.session import ConversationSession
@@ -69,7 +70,21 @@ async def send_message(
                 flow_info=response.debug.flow_info,
                 context_sections=response.debug.context_sections,
                 processing_time_ms=response.debug.processing_time_ms,
+                enrichment_info=response.debug.enrichment_info,
+                routing_path=response.debug.routing_path,
+                recursion_depth=response.debug.recursion_depth,
             )
+
+        # Map shadow messages to schema
+        shadow_messages = [
+            ShadowMessageInfo(
+                content=sm.content,
+                source=sm.source,
+                subagent_id=sm.subagent_id,
+                message_type=sm.message_type,
+            )
+            for sm in response.shadow_messages
+        ]
 
         return ChatMessageResponse(
             session_id=response.session_id,
@@ -87,6 +102,7 @@ async def send_message(
             pending_confirmation=response.pending_confirmation,
             flow_state=response.flow_state,
             escalated=response.escalated,
+            shadow_messages=shadow_messages,
             debug=debug_info,
         )
 

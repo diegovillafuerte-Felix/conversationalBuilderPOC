@@ -5,9 +5,9 @@ services:
     image: postgres:15-alpine
     container_name: felix_postgres
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: felix_orchestrator
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Database password required}
+      POSTGRES_DB: ${DB_NAME:-felix_orchestrator}
     ports:
       - "5432:5432"
     volumes:
@@ -31,6 +31,25 @@ services:
       timeout: 5s
       retries: 5
 
+  services-gateway:
+    build:
+      context: ./services
+      dockerfile: Dockerfile
+    container_name: felix_services
+    ports:
+      - "8001:8001"
+    environment:
+      - SERVICES_DEBUG=${DEBUG:-false}
+      - SERVICES_CORS_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173,http://localhost:8000}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8001/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    volumes:
+      - ./services/app:/app/app:ro
+
   backend:
     build:
       context: ./backend
@@ -39,14 +58,20 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/felix_orchestrator
+      - DATABASE_URL=postgresql+asyncpg://${DB_USER:-postgres}:${DB_PASSWORD}@postgres:5432/${DB_NAME:-felix_orchestrator}
       - REDIS_URL=redis://redis:6379/0
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - DEBUG=true
+      - SECRET_KEY=${SECRET_KEY}
+      - ADMIN_API_TOKEN=${ADMIN_API_TOKEN}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173}
+      - DEBUG=${DEBUG:-false}
+      - SERVICE_GATEWAY_URL=http://services-gateway:8001
     depends_on:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      services-gateway:
         condition: service_healthy
     volumes:
       - ./backend/app:/app/app:ro

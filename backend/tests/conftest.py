@@ -154,6 +154,7 @@ async def sample_agent(db_session):
     from app.models.agent import Agent, Tool
 
     agent = Agent(
+        config_id="test_felix",
         name="Test Felix",
         description="Test root agent for testing purposes.",
         system_prompt_addition="You are a test agent.",
@@ -173,6 +174,7 @@ async def sample_agent(db_session):
         parameters=[],
         side_effects="none",
         requires_confirmation=False,
+        routing={"type": "enter_agent", "target": "test_topups"},
     )
     db_session.add(tool)
 
@@ -187,6 +189,7 @@ async def sample_child_agent(db_session, sample_agent):
     from app.models.agent import Agent, Tool
 
     agent = Agent(
+        config_id="test_topups",
         name="Test Topups",
         description="Test topups agent for testing purposes.",
         system_prompt_addition="You handle top-ups.",

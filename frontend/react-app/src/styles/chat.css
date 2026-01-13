@@ -404,6 +404,58 @@
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
 }
 
+/* Cost Counter Styles */
+.debug-cost-counter {
+  background: linear-gradient(135deg, #2d2d3d 0%, #3d3d4d 100%);
+  padding: 15px 20px;
+  border-bottom: 1px solid #4d4d5d;
+}
+
+.cost-header {
+  font-size: 0.75rem;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 5px;
+}
+
+.cost-total {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #00b894;
+  margin-bottom: 10px;
+}
+
+.cost-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cost-item {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+}
+
+.cost-label {
+  color: #888;
+}
+
+.cost-value {
+  color: #ddd;
+  font-family: monospace;
+}
+
+.cost-latency {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #3d3d4d;
+}
+
 .debug-header {
   background: #2d2d3d;
   padding: 15px 20px;

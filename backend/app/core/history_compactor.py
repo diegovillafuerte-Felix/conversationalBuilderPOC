@@ -83,12 +83,15 @@ class HistoryCompactor:
             )
             self.db.add(compacted)
 
-        # Delete compacted messages
-        for msg in to_compact:
-            await self.db.delete(msg)
+        # Delete compacted messages in bulk (single query instead of N deletes)
+        from sqlalchemy import delete
+        msg_ids = [msg.id for msg in to_compact]
+        await self.db.execute(
+            delete(ConversationMessage).where(ConversationMessage.id.in_(msg_ids))
+        )
 
         await self.db.flush()
-        logger.info(f"Compacted {len(to_compact)} messages for user {user_id}")
+        logger.info(f"Compacted {len(msg_ids)} messages for user {user_id}")
         return summary
 
     async def _generate_summary(self, conversation_text: str) -> str:

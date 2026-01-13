@@ -73,11 +73,11 @@ conversationalBuilderPOC/
 │   │   │   └── admin.py       # Admin CRUD endpoints
 │   │   ├── schemas/           # Pydantic request/response models
 │   │   ├── config/            # JSON configurations
-│   │   │   ├── agents/        # Agent definitions
-│   │   │   ├── prompts/       # System prompt templates
-│   │   │   ├── messages/      # Service response messages
+│   │   │   ├── agents/        # Agent definitions (English-only)
+│   │   │   ├── prompts/       # System prompt templates (English-only)
 │   │   │   ├── sample_data/   # Sample data for seeding
-│   │   │   └── shadow_service.json  # Shadow service configuration
+│   │   │   ├── shadow_service.json  # Shadow service configuration
+│   │   │   └── confirmation_templates.json  # Financial transaction confirmations
 │   │   ├── seed/              # Database seeders
 │   │   └── main.py            # FastAPI app entry point
 │   └── requirements.txt
@@ -210,7 +210,11 @@ User Request
   - **Service Layer** (`services/*.py`): Returns pure business data, UI-agnostic, usable by any client (chat, web, mobile, API)
   - **Presentation Layer** (`orchestrator.py`, `template_renderer.py`, agent configs): Handles all formatting via response templates or LLM
   - **No `_message` backdoor**: Orchestrator does NOT check for `_message` fields - all formatting must go through proper channels
-- **i18n**: System prompts are always in English; only the final language directive tells LLM to respond in user's language (Spanish default). Service messages for user-facing content are bilingual in `config/messages/services.json`
+- **i18n (Simplified)**: ALL prompts and configs are in English. The ONLY language-related code is:
+  1. User's `language` attribute stored in their profile (default: "es")
+  2. Language directive injected at the end of every system prompt telling the LLM what language to respond in
+  - This means: LLM gets English instructions, responds in user's preferred language
+  - No localized config files, no `get_localized()` calls, no bilingual dictionaries
 - **Models**: Use GUID primary keys, JSON columns for flexible configs
 - **Frontend state**: Zustand stores in `react-app/src/store/`
 - **Sample data**: Sample users defined in `config/sample_data/users.json`, seeded at startup if not present
@@ -275,6 +279,17 @@ User Request
 - **Headers**: `X-User-Id` for user context, `Accept-Language` for i18n
 - **Response format**: `{"success": true, "data": {...}}` or `{"success": false, "error": "...", "error_code": "..."}`
 - **Benefits**: Teams can work independently, services can scale separately, easy to swap mock for real
+
+**i18n Simplification (Completed Jan 2026):**
+- **English-only configs**: All JSON configs (agents, prompts, tools) now use plain English strings
+- **Removed localization layer**: Deleted `get_localized()`, `get_message()`, `get_prompt_section()`, `get_base_system_prompt()` from i18n.py
+- **Deleted `services.json`**: 43 unused bilingual message templates removed
+- **Simplified context_assembler.py**: Removed 23 `get_localized()` calls, reads configs directly
+- **Simplified seed/agents.py**: Removed 30+ `get_localized()` calls
+- **Service layer cleanup**: Removed `_get_localized()` method from remittances service
+- **Confirmation templates**: New centralized `confirmation_templates.json` with enable/disable toggle per template
+- **Only language code remaining**: `get_language_directive()` in i18n.py - injects user's language preference at end of every system prompt
+- **Benefits**: Simpler codebase, better LLM performance with English instructions, no dead bilingual code
 
 **Planned:** Shadow service admin UI, visual flow editor, analytics dashboard, WhatsApp integration, real backend services, auth, rate limiting.
 

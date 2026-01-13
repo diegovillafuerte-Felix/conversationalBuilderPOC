@@ -21,6 +21,7 @@ class Subflow(Base):
     agent_id: Mapped[uuid.UUID] = mapped_column(
         GUID(), ForeignKey("agents.id", ondelete="CASCADE"), nullable=False
     )
+    config_id: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     trigger_description: Mapped[str] = mapped_column(Text, nullable=False)
     initial_state: Mapped[str] = mapped_column(String(100), nullable=False)

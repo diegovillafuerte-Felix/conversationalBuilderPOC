@@ -86,82 +86,40 @@ class TestToolExecutorConfirmation:
 
 
 class TestToolExecutorMockExecution:
-    """Test cases for mock tool execution."""
+    """Test cases for mock tool execution.
 
-    @pytest.mark.asyncio
-    async def test_execute_mock_go_home(self):
-        """Test mock execution of go_home tool."""
-        executor = ToolExecutor()
-
-        result = await executor.execute_mock("go_home", {}, "user_123")
-
-        assert result.success is True
-        assert result.data["action"] == "go_home"
-
-    @pytest.mark.asyncio
-    async def test_execute_mock_up_one_level(self):
-        """Test mock execution of up_one_level tool."""
-        executor = ToolExecutor()
-
-        result = await executor.execute_mock("up_one_level", {}, "user_123")
-
-        assert result.success is True
-        assert result.data["action"] == "up_one_level"
-
-    @pytest.mark.asyncio
-    async def test_execute_mock_escalate_to_human(self):
-        """Test mock execution of escalate_to_human tool."""
-        executor = ToolExecutor()
-
-        result = await executor.execute_mock("escalate_to_human", {}, "user_123")
-
-        assert result.success is True
-        assert result.data["action"] == "escalate_to_human"
-
-    @pytest.mark.asyncio
-    async def test_execute_mock_enter_agent(self):
-        """Test mock execution of enter_* tools."""
-        executor = ToolExecutor()
-
-        result = await executor.execute_mock("enter_topups", {}, "user_123")
-
-        assert result.success is True
-        assert result.data["action"] == "enter_agent"
-        assert result.data["agent"] == "topups"
-
-    @pytest.mark.asyncio
-    async def test_execute_mock_enter_different_agents(self):
-        """Test mock execution of various enter_* tools."""
-        executor = ToolExecutor()
-
-        agents = ["remittances", "credit", "wallet", "billpay"]
-        for agent in agents:
-            result = await executor.execute_mock(f"enter_{agent}", {}, "user_123")
-
-            assert result.success is True
-            assert result.data["action"] == "enter_agent"
-            assert result.data["agent"] == agent
-
-    @pytest.mark.asyncio
-    async def test_execute_mock_start_flow(self):
-        """Test mock execution of start_flow_* tools."""
-        executor = ToolExecutor()
-
-        result = await executor.execute_mock("start_flow_recarga", {}, "user_123")
-
-        assert result.success is True
-        assert result.data["action"] == "start_flow"
-        assert result.data["flow"] == "recarga"
+    Note: Routing tools (navigation, enter_agent, start_flow) are now handled
+    by RoutingHandler, not execute_mock. These tests only cover service tools.
+    """
 
     @pytest.mark.asyncio
     async def test_execute_mock_unknown_tool(self):
-        """Test mock execution of unknown tool."""
+        """Test mock execution of unknown tool returns error."""
         executor = ToolExecutor()
 
         result = await executor.execute_mock("unknown_tool_xyz", {}, "user_123")
 
         assert result.success is False
         assert "Unknown tool" in result.error
+
+    @pytest.mark.asyncio
+    async def test_execute_mock_routing_tools_now_fail(self):
+        """Test that routing tools now fail in execute_mock (handled by RoutingHandler)."""
+        executor = ToolExecutor()
+
+        # These tools are now handled by RoutingHandler, not execute_mock
+        routing_tools = [
+            "go_home",
+            "up_one_level",
+            "escalate_to_human",
+            "enter_topups",
+            "start_flow_recarga",
+        ]
+
+        for tool_name in routing_tools:
+            result = await executor.execute_mock(tool_name, {}, "user_123")
+            # Should fail because routing is handled elsewhere
+            assert result.success is False, f"{tool_name} should not be handled by execute_mock"
 
 
 class TestToolExecutorWithTool:

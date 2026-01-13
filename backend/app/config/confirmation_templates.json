@@ -1,0 +1,35 @@
+{
+  "description": "Centralized confirmation templates for financial transactions. When enabled, these exact templates are used. When disabled, the LLM formats the confirmation.",
+  "templates": {
+    "transfer_confirmation": {
+      "enabled": true,
+      "description": "Money transfer/remittance confirmation",
+      "template": "Please confirm your transfer:\n- Amount: ${amount_usd} USD ({amount_local} {currency})\n- Recipient: {recipient_name}\n- Country: {country}\n- Delivery: {delivery_method}\n\nTransaction ID: {transaction_id}\n\nDo you want to proceed?",
+      "required_fields": ["amount_usd", "recipient_name", "country"]
+    },
+    "topup_confirmation": {
+      "enabled": true,
+      "description": "Mobile top-up confirmation",
+      "template": "Please confirm your top-up:\n- Amount: ${amount} MXN\n- Phone: {phone_number}\n- Carrier: {carrier}\n\nDo you want to proceed?",
+      "required_fields": ["amount", "phone_number", "carrier"]
+    },
+    "bill_payment_confirmation": {
+      "enabled": true,
+      "description": "Bill payment confirmation",
+      "template": "Please confirm your payment:\n- Service: {biller_name}\n- Account: {account_number}\n- Amount: ${amount} MXN\n\nDo you want to proceed?",
+      "required_fields": ["biller_name", "account_number", "amount"]
+    },
+    "snpl_application_confirmation": {
+      "enabled": true,
+      "description": "SNPL loan application confirmation",
+      "template": "Please confirm your SNPL application:\n- Loan amount: ${amount} USD\n- Term: {term_weeks} weeks\n- Weekly payment: ${weekly_payment}\n- Total repayment: ${total_repayment}\n\nDo you want to proceed?",
+      "required_fields": ["amount", "term_weeks", "weekly_payment"]
+    },
+    "snpl_payment_confirmation": {
+      "enabled": true,
+      "description": "SNPL loan payment confirmation",
+      "template": "Please confirm your loan payment:\n- Loan ID: {loan_id}\n- Payment amount: ${amount}\n\nDo you want to proceed?",
+      "required_fields": ["loan_id", "amount"]
+    }
+  }
+}

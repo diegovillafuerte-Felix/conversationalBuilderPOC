@@ -1,10 +1,77 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useChatStore } from '../../store/chatStore';
+
+// Token pricing per million tokens (gpt-5.2)
+const TOKEN_PRICING = {
+  input: 1.75,
+  cachedInput: 0.175,
+  output: 14.00,
+};
 
 export default function DebugPanel() {
   const debugEvents = useChatStore((state) => state.debugEvents);
   const [expandedEvents, setExpandedEvents] = useState({});
   const [activeTab, setActiveTab] = useState('events');
+
+  // Calculate total token costs across all events
+  const tokenCosts = useMemo(() => {
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
+    let totalCachedTokens = 0;
+
+    debugEvents.forEach((event) => {
+      if (event.type === 'assistant_response' && event.debug) {
+        const sections = event.debug.context_sections;
+        if (sections) {
+          // Input tokens: total system + messages + tools
+          const inputTokens = (sections.total_system || 0) +
+                             (sections.messages || 0) +
+                             (sections.tools || 0);
+          totalInputTokens += inputTokens;
+        }
+
+        // Check for actual LLM usage data if available
+        const llmCall = event.debug.llm_call;
+        if (llmCall?.token_counts) {
+          if (llmCall.token_counts.output_tokens) {
+            totalOutputTokens += llmCall.token_counts.output_tokens;
+          }
+          if (llmCall.token_counts.cached_tokens) {
+            totalCachedTokens += llmCall.token_counts.cached_tokens;
+          }
+        }
+      }
+    });
+
+    // Calculate costs (price per million tokens)
+    const inputCost = (totalInputTokens / 1_000_000) * TOKEN_PRICING.input;
+    const cachedCost = (totalCachedTokens / 1_000_000) * TOKEN_PRICING.cachedInput;
+    const outputCost = (totalOutputTokens / 1_000_000) * TOKEN_PRICING.output;
+    const totalCost = inputCost + cachedCost + outputCost;
+
+    return {
+      inputTokens: totalInputTokens,
+      outputTokens: totalOutputTokens,
+      cachedTokens: totalCachedTokens,
+      inputCost,
+      cachedCost,
+      outputCost,
+      totalCost,
+    };
+  }, [debugEvents]);
+
+  // Calculate max latency across all LLM calls
+  const maxLatency = useMemo(() => {
+    let max = 0;
+    debugEvents.forEach((event) => {
+      if (event.type === 'assistant_response' && event.debug?.processing_time_ms) {
+        if (event.debug.processing_time_ms > max) {
+          max = event.debug.processing_time_ms;
+        }
+      }
+    });
+    return max;
+  }, [debugEvents]);
 
   const toggleEvent = (id) => {
     setExpandedEvents((prev) => ({
@@ -171,6 +238,35 @@ export default function DebugPanel() {
 
   return (
     <div className="debug-panel">
+      <div className="debug-cost-counter">
+        <div className="cost-header">Conversation Cost</div>
+        <div className="cost-total">${tokenCosts.totalCost.toFixed(4)}</div>
+        <div className="cost-breakdown">
+          <div className="cost-item">
+            <span className="cost-label">Input:</span>
+            <span className="cost-value">{tokenCosts.inputTokens.toLocaleString()} tokens (${tokenCosts.inputCost.toFixed(4)})</span>
+          </div>
+          {tokenCosts.cachedTokens > 0 && (
+            <div className="cost-item">
+              <span className="cost-label">Cached:</span>
+              <span className="cost-value">{tokenCosts.cachedTokens.toLocaleString()} tokens (${tokenCosts.cachedCost.toFixed(4)})</span>
+            </div>
+          )}
+          {tokenCosts.outputTokens > 0 && (
+            <div className="cost-item">
+              <span className="cost-label">Output:</span>
+              <span className="cost-value">{tokenCosts.outputTokens.toLocaleString()} tokens (${tokenCosts.outputCost.toFixed(4)})</span>
+            </div>
+          )}
+        </div>
+        {maxLatency > 0 && (
+          <div className="cost-latency">
+            <span className="cost-label">Max Latency:</span>
+            <span className="cost-value">{maxLatency.toLocaleString()}ms</span>
+          </div>
+        )}
+      </div>
+
       <div className="debug-header">
         <h3>Debug View</h3>
         <div className="debug-tabs">

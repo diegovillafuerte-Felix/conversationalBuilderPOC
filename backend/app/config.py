@@ -10,7 +10,13 @@ class Settings(BaseSettings):
     # App
     app_name: str = "Felix Orchestrator"
     debug: bool = False
-    secret_key: str = "change-me-in-production"
+
+    # Security - MUST be set via environment variables (no defaults for production)
+    secret_key: str = "dev-secret-key-CHANGE-IN-PRODUCTION"  # INSECURE default for dev only
+    admin_api_token: str = ""  # Empty = admin auth disabled (DEV ONLY - set for production!)
+
+    # CORS - comma-separated allowed origins for production
+    allowed_origins: str = "http://localhost:3000,http://localhost:5173"
 
     # OpenAI
     openai_api_key: str
@@ -20,6 +26,9 @@ class Settings(BaseSettings):
 
     # Redis
     redis_url: str = "redis://localhost:6379/0"
+
+    # Services Gateway
+    service_gateway_url: str = "http://localhost:8001"
 
     # LLM defaults
     default_model: str = "gpt-5.2"
@@ -35,6 +44,11 @@ class Settings(BaseSettings):
     token_budget_current_state: int = 300
     token_budget_tool_definitions: int = 1000
     token_budget_buffer: int = 200
+
+    @property
+    def cors_origins(self) -> list:
+        """Parse allowed origins from comma-separated string."""
+        return [origin.strip() for origin in self.allowed_origins.split(",")]
 
     class Config:
         env_file = ".env"

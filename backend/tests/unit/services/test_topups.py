@@ -227,16 +227,21 @@ class TestMockTopUpsServiceLanguage:
     """Test cases for language handling."""
 
     def test_language_switching(self):
-        """Test that messages change with language."""
+        """Test that service returns raw data without formatting."""
         service_es = MockTopUpsService(language="es")
         service_en = MockTopUpsService(language="en")
 
         result_es = service_es.get_carriers("MX")
         result_en = service_en.get_carriers("MX")
 
-        # Messages should be different (or at least present)
-        assert "_message" in result_es
-        assert "_message" in result_en
+        # Service should return raw data only, no _message field
+        assert "_message" not in result_es
+        assert "_message" not in result_en
+        # Should have raw data fields
+        assert "carriers" in result_es
+        assert "carriers" in result_en
+        assert "country" in result_es
+        assert "country" in result_en
 
     def test_set_language(self):
         """Test setting language."""

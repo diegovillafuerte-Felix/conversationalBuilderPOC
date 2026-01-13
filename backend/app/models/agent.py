@@ -18,6 +18,7 @@ class Agent(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         GUID(), primary_key=True, default=uuid.uuid4
     )
+    config_id: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     parent_agent_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         GUID(), ForeignKey("agents.id"), nullable=True
@@ -101,6 +102,9 @@ class Tool(Base):
 
     # Flow transition: {onSuccess, onError}
     flow_transition: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+
+    # Routing configuration: {type, target} for navigation/flow tools
+    routing: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
     # Full JSON config for runtime language switching and admin UI editing
     config_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)

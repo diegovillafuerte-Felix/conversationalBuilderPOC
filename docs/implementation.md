@@ -18,6 +18,7 @@ The Felix Conversational Orchestrator POC enables natural, context-aware convers
 | Context Assembler | ✅ Complete | FR-011 to FR-017 |
 | State Manager | ✅ Complete | FR-007 to FR-009 |
 | Tool Executor | ✅ Complete | FR-004 to FR-006 |
+| Routing System | ✅ Complete | FR-002, FR-007 |
 | Orchestrator | ✅ Complete | FR-001 to FR-010 |
 | Mock Services | ✅ Complete | US-006 to US-011 |
 | Chat UI | ✅ Complete | US-020 to US-022 |
@@ -66,10 +67,13 @@ conversationalBuilderPOC/
 │   │   ├── core/
 │   │   │   ├── orchestrator.py      # Main conversation handler
 │   │   │   ├── state_manager.py     # Session/flow state
-│   │   │   ├── tool_executor.py     # Tool execution
+│   │   │   ├── tool_executor.py     # Tool execution (service tools)
+│   │   │   ├── routing.py           # Routing types and data classes
+│   │   │   ├── routing_registry.py  # Startup validation and routing cache
+│   │   │   ├── routing_handler.py   # Unified routing execution
 │   │   │   ├── context_assembler.py # Prompt assembly
 │   │   │   ├── template_renderer.py # Response templates
-│   │   │   └── llm_client.py        # OpenAI client
+│   │   │   └── llm_client.py        # OpenAI API client
 │   │   ├── models/
 │   │   │   ├── agent.py             # Agent, Tool, ResponseTemplate
 │   │   │   ├── subflow.py           # Subflow, SubflowState
@@ -372,6 +376,78 @@ conversationalBuilderPOC/
 | AC-022.1: New Conversation button | ✅ | SessionInfo.jsx component |
 | AC-022.2: Preset test users | ✅ | UserSidebar.jsx with /api/chat/users |
 | AC-022.3: User context in sidebar | ✅ | UserSidebar.jsx shows balances/products |
+
+---
+
+## Routing System Architecture
+
+The routing system handles navigation between agents, starting subflows, and navigation actions (up, home, escalate). It was refactored to use explicit, validated routing instead of fragile string parsing.
+
+### Components
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| RoutingType | `core/routing.py` | Enum: ENTER_AGENT, START_FLOW, NAVIGATION, SERVICE |
+| RoutingConfig | `core/routing.py` | Data class with type, target, optional cross_agent |
+| RoutingRegistry | `core/routing_registry.py` | Startup validation and fast lookups by config_id |
+| RoutingHandler | `core/routing_handler.py` | Unified execution of routing actions |
+
+### Database Model Changes
+
+- **Agent.config_id** - Stable identifier for agent lookup (e.g., "remittances", "snpl")
+- **Subflow.config_id** - Stable identifier for subflow lookup (e.g., "send_money_flow")
+- **Tool.routing** - JSON field with explicit routing config
+
+### Routing Configuration
+
+Tools can specify routing in two ways:
+
+1. **Explicit routing** (preferred):
+```json
+{
+  "name": "enter_credit",
+  "routing": {"type": "enter_agent", "target": "snpl"}
+}
+```
+
+2. **Legacy starts_flow** (still supported):
+```json
+{
+  "name": "start_flow_send_money",
+  "starts_flow": "send_money_flow"
+}
+```
+
+3. **Cross-agent flows** (for flows in different agents):
+```json
+{
+  "name": "start_flow_use_snpl",
+  "routing": {"type": "start_flow", "target": "snpl_remittance_flow", "cross_agent": "remittances"}
+}
+```
+
+### Startup Validation
+
+At application startup, `RoutingRegistry.initialize()`:
+1. Loads all agents and caches by `config_id`
+2. Loads all subflows and caches by `config_id`
+3. Validates all tool routing targets exist
+4. Raises `RoutingRegistryError` if validation fails (prevents startup)
+
+### Flow
+
+```
+Tool Call → Orchestrator → RoutingHandler.handle_tool_routing()
+                              │
+                              ├── ENTER_AGENT → StateManager.push_agent()
+                              │
+                              ├── START_FLOW → StateManager.enter_subflow()
+                              │                 └── Handle on_enter message
+                              │
+                              ├── NAVIGATION → go_home / up_one_level / escalate
+                              │
+                              └── SERVICE → ToolExecutor.execute() (normal tools)
+```
 
 ---
 

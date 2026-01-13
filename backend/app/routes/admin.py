@@ -1,35 +1,28 @@
-"""Admin API routes for managing agents, tools, subflows, and templates."""
+"""Admin API routes for managing agents via JSON config files."""
 
 import logging
-from typing import List
-from uuid import UUID
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException, Body, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from sqlalchemy.orm import selectinload
 
-from app.database import get_db
-from app.models.agent import Agent, Tool, ResponseTemplate
-from app.models.subflow import Subflow, SubflowState
-from app.schemas.admin import (
-    AgentCreate,
-    AgentUpdate,
-    AgentResponse,
-    AgentListItem,
-    ToolCreate,
-    ToolUpdate,
-    ToolResponse,
-    SubflowCreate,
-    SubflowUpdate,
-    SubflowResponse,
-    SubflowStateResponse,
-    StateCreate,
-    StateUpdate,
-    TemplateCreate,
-    TemplateUpdate,
-    ResponseTemplateResponse,
+from app.core.config_loader import (
+    load_agent_config,
+    save_agent_config,
+    delete_agent_config,
+    get_agent_ids,
+    agent_exists,
+    reload_configs,
+    load_shadow_service_config,
+    save_shadow_service_config,
+    get_shadow_subagent_config,
+    update_shadow_subagent_config,
+    add_shadow_subagent,
+    delete_shadow_subagent,
 )
+from app.database import get_db
+from app.seed.agents import reseed_agents_from_json
+from app.auth import verify_admin_token
 
 logger = logging.getLogger(__name__)
 
@@ -40,611 +33,665 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 # Helper Functions
 # ============================================================================
 
-def agent_to_list_item(agent: Agent) -> AgentListItem:
-    """Convert Agent model to AgentListItem schema."""
-    return AgentListItem(
-        id=agent.id,
-        name=agent.name,
-        parent_agent_id=agent.parent_agent_id,
-        description=agent.description,
-        is_active=agent.is_active,
-    )
+def find_item_by_name(items: list, name: str) -> tuple[int, Optional[dict]]:
+    """Find an item in a list by its 'name' field."""
+    for i, item in enumerate(items):
+        if item.get("name") == name:
+            return i, item
+    return -1, None
 
 
-def tool_to_response(tool: Tool) -> ToolResponse:
-    """Convert Tool model to ToolResponse schema."""
-    return ToolResponse(
-        id=tool.id,
-        agent_id=tool.agent_id,
-        name=tool.name,
-        description=tool.description,
-        parameters=tool.parameters,
-        api_config=tool.api_config,
-        response_config=tool.response_config,
-        requires_confirmation=tool.requires_confirmation,
-        confirmation_template=tool.confirmation_template,
-        side_effects=tool.side_effects,
-        flow_transition=tool.flow_transition,
-        created_at=tool.created_at,
-    )
+# ============================================================================
+# Config Reload Endpoint
+# ============================================================================
+
+@router.post("/reload-config")
+async def reload_config(_token: str = Depends(verify_admin_token)):
+    """Hot-reload all configs from JSON files (clears in-memory cache)."""
+    reload_configs()
+    agent_ids = get_agent_ids()
+    return {
+        "message": "Configs reloaded successfully",
+        "agents": agent_ids,
+        "count": len(agent_ids)
+    }
 
 
-def state_to_response(state: SubflowState) -> SubflowStateResponse:
-    """Convert SubflowState model to SubflowStateResponse schema."""
-    return SubflowStateResponse(
-        id=state.id,
-        subflow_id=state.subflow_id,
-        state_id=state.state_id,
-        name=state.name,
-        agent_instructions=state.agent_instructions,
-        state_tools=state.state_tools,
-        transitions=state.transitions,
-        is_final=state.is_final,
-        on_enter=state.on_enter,
-    )
+@router.post("/sync-to-db")
+async def sync_to_db(
+    db: AsyncSession = Depends(get_db),
+    _token: str = Depends(verify_admin_token)
+):
+    """
+    Sync JSON configs to database for runtime.
 
+    This deletes all agent-related data in DB and re-seeds from JSON files.
+    Use this after editing agent configs to update the runtime.
 
-def subflow_to_response(subflow: Subflow) -> SubflowResponse:
-    """Convert Subflow model to SubflowResponse schema."""
-    return SubflowResponse(
-        id=subflow.id,
-        agent_id=subflow.agent_id,
-        name=subflow.name,
-        trigger_description=subflow.trigger_description,
-        initial_state=subflow.initial_state,
-        data_schema=subflow.data_schema,
-        timeout_config=subflow.timeout_config,
-        created_at=subflow.created_at,
-        states=[state_to_response(s) for s in subflow.states],
-    )
+    WARNING: This will reset all agent UUIDs. Active sessions may break.
+    """
+    try:
+        # Clear caches first
+        reload_configs()
 
+        # Reseed database from JSON
+        stats = await reseed_agents_from_json(db)
 
-def template_to_response(template: ResponseTemplate) -> ResponseTemplateResponse:
-    """Convert ResponseTemplate model to ResponseTemplateResponse schema."""
-    return ResponseTemplateResponse(
-        id=template.id,
-        agent_id=template.agent_id,
-        name=template.name,
-        trigger_config=template.trigger_config,
-        template=template.template,
-        required_fields=template.required_fields,
-        enforcement=template.enforcement,
-    )
-
-
-def agent_to_response(agent: Agent) -> AgentResponse:
-    """Convert Agent model to AgentResponse schema."""
-    return AgentResponse(
-        id=agent.id,
-        name=agent.name,
-        parent_agent_id=agent.parent_agent_id,
-        description=agent.description,
-        system_prompt_addition=agent.system_prompt_addition,
-        model_config_json=agent.model_config_json,
-        navigation_tools=agent.navigation_tools,
-        context_requirements=agent.context_requirements,
-        is_active=agent.is_active,
-        created_at=agent.created_at,
-        updated_at=agent.updated_at,
-        children=[agent_to_list_item(c) for c in agent.children],
-        tools=[tool_to_response(t) for t in agent.tools],
-        subflows=[subflow_to_response(s) for s in agent.subflows],
-        response_templates=[template_to_response(t) for t in agent.response_templates],
-    )
+        return {
+            "message": "Database synced with JSON configs",
+            "stats": stats,
+            "agents": get_agent_ids()
+        }
+    except Exception as e:
+        logger.error(f"Failed to sync to DB: {e}")
+        raise HTTPException(status_code=500, detail=f"Sync failed: {str(e)}")
 
 
 # ============================================================================
 # Agent Endpoints
 # ============================================================================
 
-@router.get("/agents", response_model=List[AgentListItem])
-async def list_agents(db: AsyncSession = Depends(get_db)):
-    """List all agents."""
-    result = await db.execute(select(Agent).order_by(Agent.name))
-    agents = result.scalars().all()
-    return [agent_to_list_item(a) for a in agents]
+@router.get("/agents")
+async def list_agents(_token: str = Depends(verify_admin_token)):
+    """List all agents from JSON files."""
+    agents = []
+    for agent_id in get_agent_ids():
+        config = load_agent_config(agent_id)
+        if config:
+            agents.append({
+                "id": agent_id,
+                "name": config.get("name", agent_id),
+                "description": config.get("description", ""),
+                "parent_agent": config.get("parent_agent"),
+                "is_active": config.get("is_active", True),
+                "tools_count": len(config.get("tools", [])),
+                "subflows_count": len(config.get("subflows", [])),
+            })
+    return agents
 
 
-@router.get("/agents/{agent_id}", response_model=AgentResponse)
-async def get_agent(agent_id: UUID, db: AsyncSession = Depends(get_db)):
-    """Get agent details with all relationships."""
-    result = await db.execute(
-        select(Agent)
-        .where(Agent.id == agent_id)
-        .options(
-            selectinload(Agent.children),
-            selectinload(Agent.tools),
-            selectinload(Agent.subflows).selectinload(Subflow.states),
-            selectinload(Agent.response_templates),
-        )
-    )
-    agent = result.scalar_one_or_none()
-
-    if not agent:
+@router.get("/agents/{agent_id}")
+async def get_agent(agent_id: str, _token: str = Depends(verify_admin_token)):
+    """Get full agent config from JSON."""
+    config = load_agent_config(agent_id)
+    if not config:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    return agent_to_response(agent)
+    # Add computed fields for frontend compatibility
+    return {
+        "id": agent_id,
+        "name": config.get("name", agent_id),
+        "description": config.get("description", ""),
+        "parent_agent_id": config.get("parent_agent"),
+        "system_prompt_addition": config.get("system_prompt_addition", ""),
+        "model_config_json": config.get("model_config", {}),
+        "navigation_tools": config.get("navigation", {}),
+        "context_requirements": config.get("context_requirements", []),
+        "is_active": config.get("is_active", True),
+        # Nested entities
+        "tools": config.get("tools", []),
+        "subflows": config.get("subflows", []),
+        "response_templates": config.get("response_templates", []),
+        # Full config for reference
+        "config": config,
+    }
 
 
-@router.post("/agents", response_model=AgentResponse)
-async def create_agent(request: AgentCreate, db: AsyncSession = Depends(get_db)):
-    """Create a new agent."""
-    # Validate parent exists if specified
-    if request.parent_agent_id:
-        result = await db.execute(
-            select(Agent).where(Agent.id == request.parent_agent_id)
-        )
-        if not result.scalar_one_or_none():
-            raise HTTPException(status_code=400, detail="Parent agent not found")
-
-    agent = Agent(
-        name=request.name,
-        description=request.description,
-        parent_agent_id=request.parent_agent_id,
-        system_prompt_addition=request.system_prompt_addition,
-        model_config_json=request.model_config_json,
-        navigation_tools=request.navigation_tools,
-        context_requirements=request.context_requirements,
-    )
-    db.add(agent)
-    await db.commit()
-    await db.refresh(agent, ["children", "tools", "subflows", "response_templates"])
-
-    return agent_to_response(agent)
-
-
-@router.put("/agents/{agent_id}", response_model=AgentResponse)
-async def update_agent(
-    agent_id: UUID,
-    request: AgentUpdate,
-    db: AsyncSession = Depends(get_db),
+@router.post("/agents/{agent_id}")
+async def create_agent(
+    agent_id: str,
+    config: dict = Body(...),
+    _token: str = Depends(verify_admin_token)
 ):
-    """Update an agent."""
-    result = await db.execute(
-        select(Agent)
-        .where(Agent.id == agent_id)
-        .options(
-            selectinload(Agent.children),
-            selectinload(Agent.tools),
-            selectinload(Agent.subflows).selectinload(Subflow.states),
-            selectinload(Agent.response_templates),
-        )
-    )
-    agent = result.scalar_one_or_none()
+    """Create a new agent JSON file."""
+    if agent_exists(agent_id):
+        raise HTTPException(status_code=400, detail="Agent already exists")
 
-    if not agent:
+    # Ensure required structure
+    if "id" not in config:
+        config["id"] = agent_id
+
+    save_agent_config(agent_id, config)
+    return {"id": agent_id, "message": "Agent created", **config}
+
+
+@router.put("/agents/{agent_id}")
+async def update_agent(
+    agent_id: str,
+    updates: dict = Body(...),
+    _token: str = Depends(verify_admin_token)
+):
+    """Update agent config in JSON file."""
+    config = load_agent_config(agent_id)
+    if not config:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    # Update fields if provided
-    update_data = request.model_dump(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(agent, field, value)
+    # Deep merge updates into config
+    for key, value in updates.items():
+        config[key] = value
 
-    await db.commit()
-    await db.refresh(agent)
-
-    return agent_to_response(agent)
+    save_agent_config(agent_id, config)
+    return {"id": agent_id, "message": "Agent updated", **config}
 
 
 @router.delete("/agents/{agent_id}")
-async def delete_agent(agent_id: UUID, db: AsyncSession = Depends(get_db)):
-    """Delete an agent and all related entities."""
-    result = await db.execute(select(Agent).where(Agent.id == agent_id))
-    agent = result.scalar_one_or_none()
+async def delete_agent(agent_id: str, _token: str = Depends(verify_admin_token)):
+    """Delete agent JSON file."""
+    if not delete_agent_config(agent_id):
+        raise HTTPException(status_code=404, detail="Agent not found")
+    return {"message": f"Agent '{agent_id}' deleted successfully"}
 
-    if not agent:
+
+@router.post("/agents/{agent_id}/clone")
+async def clone_agent(
+    agent_id: str,
+    new_agent_id: str = Body(..., embed=True),
+    _token: str = Depends(verify_admin_token)
+):
+    """Clone an agent to a new JSON file."""
+    config = load_agent_config(agent_id)
+    if not config:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    await db.delete(agent)
-    await db.commit()
+    if agent_exists(new_agent_id):
+        raise HTTPException(status_code=400, detail="Target agent ID already exists")
 
-    return {"message": "Agent deleted successfully"}
+    # Clone config with new ID
+    cloned = config.copy()
+    cloned["id"] = new_agent_id
 
+    # Update name to indicate it's a copy
+    if "name" in cloned:
+        cloned["name"] = f"{cloned['name']} (Copy)"
 
-@router.post("/agents/{agent_id}/clone", response_model=AgentResponse)
-async def clone_agent(agent_id: UUID, db: AsyncSession = Depends(get_db)):
-    """Clone an agent with its tools and templates."""
-    result = await db.execute(
-        select(Agent)
-        .where(Agent.id == agent_id)
-        .options(
-            selectinload(Agent.tools),
-            selectinload(Agent.response_templates),
-        )
-    )
-    source = result.scalar_one_or_none()
-
-    if not source:
-        raise HTTPException(status_code=404, detail="Agent not found")
-
-    # Create cloned agent
-    cloned = Agent(
-        name=f"{source.name} (Copy)",
-        description=source.description,
-        parent_agent_id=source.parent_agent_id,
-        system_prompt_addition=source.system_prompt_addition,
-        model_config_json=source.model_config_json,
-        navigation_tools=source.navigation_tools,
-        context_requirements=source.context_requirements,
-    )
-    db.add(cloned)
-    await db.flush()
-
-    # Clone tools
-    for tool in source.tools:
-        cloned_tool = Tool(
-            agent_id=cloned.id,
-            name=tool.name,
-            description=tool.description,
-            parameters=tool.parameters,
-            api_config=tool.api_config,
-            response_config=tool.response_config,
-            requires_confirmation=tool.requires_confirmation,
-            confirmation_template=tool.confirmation_template,
-            side_effects=tool.side_effects,
-            flow_transition=tool.flow_transition,
-        )
-        db.add(cloned_tool)
-
-    # Clone templates
-    for template in source.response_templates:
-        cloned_template = ResponseTemplate(
-            agent_id=cloned.id,
-            name=template.name,
-            trigger_config=template.trigger_config,
-            template=template.template,
-            required_fields=template.required_fields,
-            enforcement=template.enforcement,
-        )
-        db.add(cloned_template)
-
-    await db.commit()
-    await db.refresh(cloned, ["children", "tools", "subflows", "response_templates"])
-
-    return agent_to_response(cloned)
+    save_agent_config(new_agent_id, cloned)
+    return {"id": new_agent_id, "message": "Agent cloned", **cloned}
 
 
 # ============================================================================
-# Tool Endpoints
+# Tool Endpoints (modify tools array in agent JSON)
 # ============================================================================
 
-@router.get("/agents/{agent_id}/tools", response_model=List[ToolResponse])
-async def list_tools(agent_id: UUID, db: AsyncSession = Depends(get_db)):
+@router.get("/agents/{agent_id}/tools")
+async def list_tools(agent_id: str, _token: str = Depends(verify_admin_token)):
     """List tools for an agent."""
-    result = await db.execute(
-        select(Tool).where(Tool.agent_id == agent_id).order_by(Tool.name)
-    )
-    tools = result.scalars().all()
-    return [tool_to_response(t) for t in tools]
+    config = load_agent_config(agent_id)
+    if not config:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    return config.get("tools", [])
 
 
-@router.post("/agents/{agent_id}/tools", response_model=ToolResponse)
+@router.post("/agents/{agent_id}/tools")
 async def create_tool(
-    agent_id: UUID,
-    request: ToolCreate,
-    db: AsyncSession = Depends(get_db),
+    agent_id: str,
+    tool: dict = Body(...),
+    _token: str = Depends(verify_admin_token)
 ):
-    """Add a tool to an agent."""
-    # Verify agent exists
-    result = await db.execute(select(Agent).where(Agent.id == agent_id))
-    if not result.scalar_one_or_none():
+    """Add a tool to an agent's JSON config."""
+    config = load_agent_config(agent_id)
+    if not config:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    tool = Tool(
-        agent_id=agent_id,
-        name=request.name,
-        description=request.description,
-        parameters=request.parameters,
-        api_config=request.api_config,
-        response_config=request.response_config,
-        requires_confirmation=request.requires_confirmation,
-        confirmation_template=request.confirmation_template,
-        side_effects=request.side_effects,
-        flow_transition=request.flow_transition,
-    )
-    db.add(tool)
-    await db.commit()
-    await db.refresh(tool)
+    if "name" not in tool:
+        raise HTTPException(status_code=400, detail="Tool must have a 'name' field")
 
-    return tool_to_response(tool)
+    tools = config.get("tools", [])
+
+    # Check for duplicate name
+    if any(t.get("name") == tool["name"] for t in tools):
+        raise HTTPException(status_code=400, detail="Tool with this name already exists")
+
+    tools.append(tool)
+    config["tools"] = tools
+    save_agent_config(agent_id, config)
+
+    return {"message": "Tool added", "tool": tool}
 
 
-@router.put("/tools/{tool_id}", response_model=ToolResponse)
+@router.put("/agents/{agent_id}/tools/{tool_name}")
 async def update_tool(
-    tool_id: UUID,
-    request: ToolUpdate,
-    db: AsyncSession = Depends(get_db),
+    agent_id: str,
+    tool_name: str,
+    tool: dict = Body(...),
+    _token: str = Depends(verify_admin_token)
 ):
-    """Update a tool."""
-    result = await db.execute(select(Tool).where(Tool.id == tool_id))
-    tool = result.scalar_one_or_none()
-
-    if not tool:
-        raise HTTPException(status_code=404, detail="Tool not found")
-
-    update_data = request.model_dump(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(tool, field, value)
-
-    await db.commit()
-    await db.refresh(tool)
-
-    return tool_to_response(tool)
-
-
-@router.delete("/tools/{tool_id}")
-async def delete_tool(tool_id: UUID, db: AsyncSession = Depends(get_db)):
-    """Delete a tool."""
-    result = await db.execute(select(Tool).where(Tool.id == tool_id))
-    tool = result.scalar_one_or_none()
-
-    if not tool:
-        raise HTTPException(status_code=404, detail="Tool not found")
-
-    await db.delete(tool)
-    await db.commit()
-
-    return {"message": "Tool deleted successfully"}
-
-
-# ============================================================================
-# Subflow Endpoints
-# ============================================================================
-
-@router.get("/agents/{agent_id}/subflows", response_model=List[SubflowResponse])
-async def list_subflows(agent_id: UUID, db: AsyncSession = Depends(get_db)):
-    """List subflows for an agent."""
-    result = await db.execute(
-        select(Subflow)
-        .where(Subflow.agent_id == agent_id)
-        .options(selectinload(Subflow.states))
-        .order_by(Subflow.name)
-    )
-    subflows = result.scalars().all()
-    return [subflow_to_response(s) for s in subflows]
-
-
-@router.post("/agents/{agent_id}/subflows", response_model=SubflowResponse)
-async def create_subflow(
-    agent_id: UUID,
-    request: SubflowCreate,
-    db: AsyncSession = Depends(get_db),
-):
-    """Create a subflow for an agent."""
-    # Verify agent exists
-    result = await db.execute(select(Agent).where(Agent.id == agent_id))
-    if not result.scalar_one_or_none():
+    """Update a tool in an agent's JSON config."""
+    config = load_agent_config(agent_id)
+    if not config:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    subflow = Subflow(
-        agent_id=agent_id,
-        name=request.name,
-        trigger_description=request.trigger_description,
-        initial_state=request.initial_state,
-        data_schema=request.data_schema,
-        timeout_config=request.timeout_config,
-    )
-    db.add(subflow)
-    await db.commit()
-    await db.refresh(subflow, ["states"])
+    tools = config.get("tools", [])
+    idx, existing = find_item_by_name(tools, tool_name)
 
-    return subflow_to_response(subflow)
+    if idx == -1:
+        raise HTTPException(status_code=404, detail="Tool not found")
+
+    # Replace the tool
+    tools[idx] = tool
+    config["tools"] = tools
+    save_agent_config(agent_id, config)
+
+    return {"message": "Tool updated", "tool": tool}
 
 
-@router.put("/subflows/{subflow_id}", response_model=SubflowResponse)
-async def update_subflow(
-    subflow_id: UUID,
-    request: SubflowUpdate,
-    db: AsyncSession = Depends(get_db),
+@router.delete("/agents/{agent_id}/tools/{tool_name}")
+async def delete_tool(
+    agent_id: str,
+    tool_name: str,
+    _token: str = Depends(verify_admin_token)
 ):
-    """Update a subflow."""
-    result = await db.execute(
-        select(Subflow)
-        .where(Subflow.id == subflow_id)
-        .options(selectinload(Subflow.states))
-    )
-    subflow = result.scalar_one_or_none()
+    """Delete a tool from an agent's JSON config."""
+    config = load_agent_config(agent_id)
+    if not config:
+        raise HTTPException(status_code=404, detail="Agent not found")
 
-    if not subflow:
-        raise HTTPException(status_code=404, detail="Subflow not found")
+    tools = config.get("tools", [])
+    idx, _ = find_item_by_name(tools, tool_name)
 
-    update_data = request.model_dump(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(subflow, field, value)
+    if idx == -1:
+        raise HTTPException(status_code=404, detail="Tool not found")
 
-    await db.commit()
-    await db.refresh(subflow)
+    deleted = tools.pop(idx)
+    config["tools"] = tools
+    save_agent_config(agent_id, config)
 
-    return subflow_to_response(subflow)
-
-
-@router.delete("/subflows/{subflow_id}")
-async def delete_subflow(subflow_id: UUID, db: AsyncSession = Depends(get_db)):
-    """Delete a subflow and its states."""
-    result = await db.execute(select(Subflow).where(Subflow.id == subflow_id))
-    subflow = result.scalar_one_or_none()
-
-    if not subflow:
-        raise HTTPException(status_code=404, detail="Subflow not found")
-
-    await db.delete(subflow)
-    await db.commit()
-
-    return {"message": "Subflow deleted successfully"}
+    return {"message": "Tool deleted", "tool": deleted}
 
 
 # ============================================================================
-# SubflowState Endpoints
+# Subflow Endpoints (modify subflows array in agent JSON)
 # ============================================================================
 
-@router.get("/subflows/{subflow_id}/states", response_model=List[SubflowStateResponse])
-async def list_states(subflow_id: UUID, db: AsyncSession = Depends(get_db)):
+@router.get("/agents/{agent_id}/subflows")
+async def list_subflows(agent_id: str, _token: str = Depends(verify_admin_token)):
+    """List subflows for an agent."""
+    config = load_agent_config(agent_id)
+    if not config:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    return config.get("subflows", [])
+
+
+@router.get("/agents/{agent_id}/subflows/{subflow_id}")
+async def get_subflow(
+    agent_id: str,
+    subflow_id: str,
+    _token: str = Depends(verify_admin_token)
+):
+    """Get a specific subflow."""
+    config = load_agent_config(agent_id)
+    if not config:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    subflows = config.get("subflows", [])
+    for sf in subflows:
+        if sf.get("id") == subflow_id:
+            return sf
+
+    raise HTTPException(status_code=404, detail="Subflow not found")
+
+
+@router.post("/agents/{agent_id}/subflows")
+async def create_subflow(
+    agent_id: str,
+    subflow: dict = Body(...),
+    _token: str = Depends(verify_admin_token)
+):
+    """Add a subflow to an agent's JSON config."""
+    config = load_agent_config(agent_id)
+    if not config:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    if "id" not in subflow:
+        raise HTTPException(status_code=400, detail="Subflow must have an 'id' field")
+
+    subflows = config.get("subflows", [])
+
+    # Check for duplicate ID
+    if any(sf.get("id") == subflow["id"] for sf in subflows):
+        raise HTTPException(status_code=400, detail="Subflow with this ID already exists")
+
+    subflows.append(subflow)
+    config["subflows"] = subflows
+    save_agent_config(agent_id, config)
+
+    return {"message": "Subflow added", "subflow": subflow}
+
+
+@router.put("/agents/{agent_id}/subflows/{subflow_id}")
+async def update_subflow(
+    agent_id: str,
+    subflow_id: str,
+    subflow: dict = Body(...),
+    _token: str = Depends(verify_admin_token)
+):
+    """Update a subflow in an agent's JSON config."""
+    config = load_agent_config(agent_id)
+    if not config:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    subflows = config.get("subflows", [])
+
+    for i, sf in enumerate(subflows):
+        if sf.get("id") == subflow_id:
+            subflows[i] = subflow
+            config["subflows"] = subflows
+            save_agent_config(agent_id, config)
+            return {"message": "Subflow updated", "subflow": subflow}
+
+    raise HTTPException(status_code=404, detail="Subflow not found")
+
+
+@router.delete("/agents/{agent_id}/subflows/{subflow_id}")
+async def delete_subflow(
+    agent_id: str,
+    subflow_id: str,
+    _token: str = Depends(verify_admin_token)
+):
+    """Delete a subflow from an agent's JSON config."""
+    config = load_agent_config(agent_id)
+    if not config:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    subflows = config.get("subflows", [])
+
+    for i, sf in enumerate(subflows):
+        if sf.get("id") == subflow_id:
+            deleted = subflows.pop(i)
+            config["subflows"] = subflows
+            save_agent_config(agent_id, config)
+            return {"message": "Subflow deleted", "subflow": deleted}
+
+    raise HTTPException(status_code=404, detail="Subflow not found")
+
+
+# ============================================================================
+# Subflow State Endpoints (modify states array in subflow)
+# ============================================================================
+
+@router.get("/agents/{agent_id}/subflows/{subflow_id}/states")
+async def list_states(
+    agent_id: str,
+    subflow_id: str,
+    _token: str = Depends(verify_admin_token)
+):
     """List states for a subflow."""
-    result = await db.execute(
-        select(SubflowState)
-        .where(SubflowState.subflow_id == subflow_id)
-        .order_by(SubflowState.state_id)
-    )
-    states = result.scalars().all()
-    return [state_to_response(s) for s in states]
+    config = load_agent_config(agent_id)
+    if not config:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    for sf in config.get("subflows", []):
+        if sf.get("id") == subflow_id:
+            return sf.get("states", [])
+
+    raise HTTPException(status_code=404, detail="Subflow not found")
 
 
-@router.post("/subflows/{subflow_id}/states", response_model=SubflowStateResponse)
+@router.post("/agents/{agent_id}/subflows/{subflow_id}/states")
 async def create_state(
-    subflow_id: UUID,
-    request: StateCreate,
-    db: AsyncSession = Depends(get_db),
+    agent_id: str,
+    subflow_id: str,
+    state: dict = Body(...),
+    _token: str = Depends(verify_admin_token)
 ):
     """Add a state to a subflow."""
-    # Verify subflow exists
-    result = await db.execute(select(Subflow).where(Subflow.id == subflow_id))
-    if not result.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Subflow not found")
-
-    # Check for duplicate state_id
-    result = await db.execute(
-        select(SubflowState)
-        .where(SubflowState.subflow_id == subflow_id)
-        .where(SubflowState.state_id == request.state_id)
-    )
-    if result.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="State ID already exists in this subflow")
-
-    state = SubflowState(
-        subflow_id=subflow_id,
-        state_id=request.state_id,
-        name=request.name,
-        agent_instructions=request.agent_instructions,
-        state_tools=request.state_tools,
-        transitions=request.transitions,
-        is_final=request.is_final,
-        on_enter=request.on_enter,
-    )
-    db.add(state)
-    await db.commit()
-    await db.refresh(state)
-
-    return state_to_response(state)
-
-
-@router.put("/states/{state_id}", response_model=SubflowStateResponse)
-async def update_state(
-    state_id: UUID,
-    request: StateUpdate,
-    db: AsyncSession = Depends(get_db),
-):
-    """Update a subflow state."""
-    result = await db.execute(select(SubflowState).where(SubflowState.id == state_id))
-    state = result.scalar_one_or_none()
-
-    if not state:
-        raise HTTPException(status_code=404, detail="State not found")
-
-    update_data = request.model_dump(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(state, field, value)
-
-    await db.commit()
-    await db.refresh(state)
-
-    return state_to_response(state)
-
-
-@router.delete("/states/{state_id}")
-async def delete_state(state_id: UUID, db: AsyncSession = Depends(get_db)):
-    """Delete a subflow state."""
-    result = await db.execute(select(SubflowState).where(SubflowState.id == state_id))
-    state = result.scalar_one_or_none()
-
-    if not state:
-        raise HTTPException(status_code=404, detail="State not found")
-
-    await db.delete(state)
-    await db.commit()
-
-    return {"message": "State deleted successfully"}
-
-
-# ============================================================================
-# ResponseTemplate Endpoints
-# ============================================================================
-
-@router.get("/agents/{agent_id}/templates", response_model=List[ResponseTemplateResponse])
-async def list_templates(agent_id: UUID, db: AsyncSession = Depends(get_db)):
-    """List response templates for an agent."""
-    result = await db.execute(
-        select(ResponseTemplate)
-        .where(ResponseTemplate.agent_id == agent_id)
-        .order_by(ResponseTemplate.name)
-    )
-    templates = result.scalars().all()
-    return [template_to_response(t) for t in templates]
-
-
-@router.post("/agents/{agent_id}/templates", response_model=ResponseTemplateResponse)
-async def create_template(
-    agent_id: UUID,
-    request: TemplateCreate,
-    db: AsyncSession = Depends(get_db),
-):
-    """Create a response template for an agent."""
-    # Verify agent exists
-    result = await db.execute(select(Agent).where(Agent.id == agent_id))
-    if not result.scalar_one_or_none():
+    config = load_agent_config(agent_id)
+    if not config:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    template = ResponseTemplate(
-        agent_id=agent_id,
-        name=request.name,
-        trigger_config=request.trigger_config,
-        template=request.template,
-        required_fields=request.required_fields,
-        enforcement=request.enforcement,
-    )
-    db.add(template)
-    await db.commit()
-    await db.refresh(template)
+    if "id" not in state:
+        raise HTTPException(status_code=400, detail="State must have an 'id' field")
 
-    return template_to_response(template)
+    subflows = config.get("subflows", [])
+
+    for sf in subflows:
+        if sf.get("id") == subflow_id:
+            states = sf.get("states", [])
+
+            # Check for duplicate state ID
+            if any(s.get("id") == state["id"] for s in states):
+                raise HTTPException(status_code=400, detail="State with this ID already exists")
+
+            states.append(state)
+            sf["states"] = states
+            config["subflows"] = subflows
+            save_agent_config(agent_id, config)
+
+            return {"message": "State added", "state": state}
+
+    raise HTTPException(status_code=404, detail="Subflow not found")
 
 
-@router.put("/templates/{template_id}", response_model=ResponseTemplateResponse)
-async def update_template(
-    template_id: UUID,
-    request: TemplateUpdate,
-    db: AsyncSession = Depends(get_db),
+@router.put("/agents/{agent_id}/subflows/{subflow_id}/states/{state_id}")
+async def update_state(
+    agent_id: str,
+    subflow_id: str,
+    state_id: str,
+    state: dict = Body(...),
+    _token: str = Depends(verify_admin_token)
 ):
-    """Update a response template."""
-    result = await db.execute(
-        select(ResponseTemplate).where(ResponseTemplate.id == template_id)
-    )
-    template = result.scalar_one_or_none()
+    """Update a state in a subflow."""
+    config = load_agent_config(agent_id)
+    if not config:
+        raise HTTPException(status_code=404, detail="Agent not found")
 
-    if not template:
-        raise HTTPException(status_code=404, detail="Template not found")
+    subflows = config.get("subflows", [])
 
-    update_data = request.model_dump(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(template, field, value)
+    for sf in subflows:
+        if sf.get("id") == subflow_id:
+            states = sf.get("states", [])
 
-    await db.commit()
-    await db.refresh(template)
+            for i, s in enumerate(states):
+                if s.get("id") == state_id:
+                    states[i] = state
+                    sf["states"] = states
+                    config["subflows"] = subflows
+                    save_agent_config(agent_id, config)
+                    return {"message": "State updated", "state": state}
 
-    return template_to_response(template)
+            raise HTTPException(status_code=404, detail="State not found")
+
+    raise HTTPException(status_code=404, detail="Subflow not found")
 
 
-@router.delete("/templates/{template_id}")
-async def delete_template(template_id: UUID, db: AsyncSession = Depends(get_db)):
-    """Delete a response template."""
-    result = await db.execute(
-        select(ResponseTemplate).where(ResponseTemplate.id == template_id)
-    )
-    template = result.scalar_one_or_none()
+@router.delete("/agents/{agent_id}/subflows/{subflow_id}/states/{state_id}")
+async def delete_state(
+    agent_id: str,
+    subflow_id: str,
+    state_id: str,
+    _token: str = Depends(verify_admin_token)
+):
+    """Delete a state from a subflow."""
+    config = load_agent_config(agent_id)
+    if not config:
+        raise HTTPException(status_code=404, detail="Agent not found")
 
-    if not template:
-        raise HTTPException(status_code=404, detail="Template not found")
+    subflows = config.get("subflows", [])
 
-    await db.delete(template)
-    await db.commit()
+    for sf in subflows:
+        if sf.get("id") == subflow_id:
+            states = sf.get("states", [])
 
-    return {"message": "Template deleted successfully"}
+            for i, s in enumerate(states):
+                if s.get("id") == state_id:
+                    deleted = states.pop(i)
+                    sf["states"] = states
+                    config["subflows"] = subflows
+                    save_agent_config(agent_id, config)
+                    return {"message": "State deleted", "state": deleted}
+
+            raise HTTPException(status_code=404, detail="State not found")
+
+    raise HTTPException(status_code=404, detail="Subflow not found")
+
+
+# ============================================================================
+# Response Template Endpoints (modify response_templates array in agent JSON)
+# ============================================================================
+
+@router.get("/agents/{agent_id}/templates")
+async def list_templates(agent_id: str, _token: str = Depends(verify_admin_token)):
+    """List response templates for an agent."""
+    config = load_agent_config(agent_id)
+    if not config:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    return config.get("response_templates", [])
+
+
+@router.post("/agents/{agent_id}/templates")
+async def create_template(
+    agent_id: str,
+    template: dict = Body(...),
+    _token: str = Depends(verify_admin_token)
+):
+    """Add a response template to an agent's JSON config."""
+    config = load_agent_config(agent_id)
+    if not config:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    if "name" not in template:
+        raise HTTPException(status_code=400, detail="Template must have a 'name' field")
+
+    templates = config.get("response_templates", [])
+
+    # Check for duplicate name
+    template_name = template.get("name")
+    if any(t.get("name") == template_name for t in templates):
+        raise HTTPException(status_code=400, detail="Template with this name already exists")
+
+    templates.append(template)
+    config["response_templates"] = templates
+    save_agent_config(agent_id, config)
+
+    return {"message": "Template added", "template": template}
+
+
+@router.put("/agents/{agent_id}/templates/{template_name}")
+async def update_template(
+    agent_id: str,
+    template_name: str,
+    template: dict = Body(...),
+    _token: str = Depends(verify_admin_token)
+):
+    """Update a response template in an agent's JSON config."""
+    config = load_agent_config(agent_id)
+    if not config:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    templates = config.get("response_templates", [])
+
+    for i, t in enumerate(templates):
+        if t.get("name") == template_name:
+            templates[i] = template
+            config["response_templates"] = templates
+            save_agent_config(agent_id, config)
+            return {"message": "Template updated", "template": template}
+
+    raise HTTPException(status_code=404, detail="Template not found")
+
+
+@router.delete("/agents/{agent_id}/templates/{template_name}")
+async def delete_template(
+    agent_id: str,
+    template_name: str,
+    _token: str = Depends(verify_admin_token)
+):
+    """Delete a response template from an agent's JSON config."""
+    config = load_agent_config(agent_id)
+    if not config:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    templates = config.get("response_templates", [])
+
+    for i, t in enumerate(templates):
+        if t.get("name") == template_name:
+            deleted = templates.pop(i)
+            config["response_templates"] = templates
+            save_agent_config(agent_id, config)
+            return {"message": "Template deleted", "template": deleted}
+
+    raise HTTPException(status_code=404, detail="Template not found")
+
+
+# ============================================================================
+# Shadow Service Endpoints
+# ============================================================================
+
+@router.get("/shadow-service")
+async def get_shadow_service_config_endpoint(_token: str = Depends(verify_admin_token)):
+    """Get full shadow service configuration."""
+    return load_shadow_service_config()
+
+
+@router.put("/shadow-service")
+async def update_shadow_service_config_endpoint(
+    config: dict = Body(...),
+    _token: str = Depends(verify_admin_token)
+):
+    """Update shadow service global settings."""
+    current = load_shadow_service_config()
+
+    # Update only global settings, preserve subagents
+    if "enabled" in config:
+        current["enabled"] = config["enabled"]
+    if "global_cooldown_messages" in config:
+        current["global_cooldown_messages"] = config["global_cooldown_messages"]
+    if "max_messages_per_response" in config:
+        current["max_messages_per_response"] = config["max_messages_per_response"]
+
+    save_shadow_service_config(current)
+    return {"message": "Shadow service config updated", **current}
+
+
+@router.get("/shadow-service/subagents/{subagent_id}")
+async def get_shadow_subagent_endpoint(
+    subagent_id: str,
+    _token: str = Depends(verify_admin_token)
+):
+    """Get a specific shadow subagent configuration."""
+    subagent = get_shadow_subagent_config(subagent_id)
+    if not subagent:
+        raise HTTPException(status_code=404, detail="Subagent not found")
+    return subagent
+
+
+@router.put("/shadow-service/subagents/{subagent_id}")
+async def update_shadow_subagent_endpoint(
+    subagent_id: str,
+    updates: dict = Body(...),
+    _token: str = Depends(verify_admin_token)
+):
+    """Update a shadow subagent configuration."""
+    # Ensure id matches
+    updates["id"] = subagent_id
+
+    if not update_shadow_subagent_config(subagent_id, updates):
+        raise HTTPException(status_code=404, detail="Subagent not found")
+
+    return {"message": "Subagent updated", **get_shadow_subagent_config(subagent_id)}
+
+
+@router.post("/shadow-service/subagents")
+async def create_shadow_subagent_endpoint(
+    subagent: dict = Body(...),
+    _token: str = Depends(verify_admin_token)
+):
+    """Create a new shadow subagent."""
+    if "id" not in subagent:
+        raise HTTPException(status_code=400, detail="Subagent must have an 'id' field")
+
+    try:
+        add_shadow_subagent(subagent)
+        return {"message": "Subagent created", **subagent}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.delete("/shadow-service/subagents/{subagent_id}")
+async def delete_shadow_subagent_endpoint(
+    subagent_id: str,
+    _token: str = Depends(verify_admin_token)
+):
+    """Delete a shadow subagent."""
+    if not delete_shadow_subagent(subagent_id):
+        raise HTTPException(status_code=404, detail="Subagent not found")
+    return {"message": f"Subagent '{subagent_id}' deleted successfully"}

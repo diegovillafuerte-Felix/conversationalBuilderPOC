@@ -94,6 +94,20 @@ export default function UserSidebar() {
               <div className="context-value">
                 {userContext.product_summaries.remittances.lifetimeCount || 0} enviadas
               </div>
+              {userContext.product_summaries.remittances.lastTransactionAt && (
+                <div className="context-value">
+                  Última: {userContext.product_summaries.remittances.lastTransactionAt}
+                </div>
+              )}
+            </div>
+          )}
+
+          {userContext.profile?.language && (
+            <div className="context-section">
+              <div className="context-label">Idioma</div>
+              <div className="context-value">
+                {userContext.profile.language === 'es' ? 'Español' : 'English'}
+              </div>
             </div>
           )}
         </div>

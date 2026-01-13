@@ -12,10 +12,26 @@
         <aside class="sidebar">
             <div class="sidebar-header">
                 <h1>Felix Admin</h1>
-                <button class="btn btn-primary" onclick="showCreateAgentModal()">+ New Agent</button>
             </div>
-            <div class="agent-tree" id="agentTree">
-                <div class="loading">Loading agents...</div>
+            <!-- Navigation Tabs -->
+            <nav class="sidebar-nav">
+                <button class="nav-item active" data-view="agents" onclick="switchView('agents')">Agents</button>
+                <button class="nav-item" data-view="shadow" onclick="switchView('shadow')">Shadow Service</button>
+            </nav>
+            <!-- Agents View Content -->
+            <div id="agentsViewSidebar">
+                <div class="sidebar-section-header">
+                    <button class="btn btn-primary btn-small" onclick="showCreateAgentModal()">+ New Agent</button>
+                </div>
+                <div class="agent-tree" id="agentTree">
+                    <div class="loading">Loading agents...</div>
+                </div>
+            </div>
+            <!-- Shadow Service View Content -->
+            <div id="shadowViewSidebar" style="display: none;">
+                <div class="sidebar-section-info">
+                    <p>Configure shadow subagents that provide contextual tips and promotions.</p>
+                </div>
             </div>
         </aside>
 
@@ -122,6 +138,56 @@
                         <div class="empty-list">No templates configured</div>
                     </div>
                 </div>
+            </div>
+
+            <!-- Shadow Service View -->
+            <div id="shadowServiceView" style="display: none;">
+                <div class="page-header">
+                    <h2>Shadow Service</h2>
+                    <p class="page-description">Configure shadow subagents that run in parallel with conversations to provide contextual tips and promotions.</p>
+                </div>
+
+                <!-- Global Settings -->
+                <section class="config-section">
+                    <h3>Global Settings</h3>
+                    <form id="shadowGlobalForm" onsubmit="saveShadowGlobalSettings(event)">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="shadowEnabled">
+                                    Enable Shadow Service
+                                </label>
+                                <p class="form-help">When disabled, no shadow messages will be generated.</p>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="shadowCooldown">Global Cooldown (messages)</label>
+                                <input type="number" id="shadowCooldown" min="0" max="100" value="3">
+                                <p class="form-help">Minimum messages between any shadow message.</p>
+                            </div>
+                            <div class="form-group">
+                                <label for="shadowMaxMessages">Max Messages Per Response</label>
+                                <input type="number" id="shadowMaxMessages" min="1" max="5" value="1">
+                                <p class="form-help">Maximum shadow messages per response.</p>
+                            </div>
+                        </div>
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary">Save Global Settings</button>
+                        </div>
+                    </form>
+                </section>
+
+                <!-- Subagents List -->
+                <section class="config-section">
+                    <div class="section-header">
+                        <h3>Shadow Subagents</h3>
+                        <button class="btn btn-primary btn-small" onclick="showSubagentModal()">+ Add Subagent</button>
+                    </div>
+                    <div class="subagents-grid" id="subagentsGrid">
+                        <div class="loading">Loading subagents...</div>
+                    </div>
+                </section>
             </div>
         </main>
     </div>
@@ -350,11 +416,116 @@
         </div>
     </div>
 
+    <!-- Shadow Subagent Modal -->
+    <div class="modal" id="subagentModal">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h3 id="subagentModalTitle">Edit Subagent</h3>
+                <button class="close-btn" onclick="closeModal('subagentModal')">&times;</button>
+            </div>
+            <form id="subagentForm" onsubmit="saveSubagent(event)">
+                <input type="hidden" id="subagentOriginalId">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="subagentId">ID *</label>
+                        <input type="text" id="subagentId" required placeholder="e.g., financial_advisor">
+                    </div>
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="subagentEnabled" checked>
+                            Enabled
+                        </label>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="subagentSourceLabelEn">Source Label (EN)</label>
+                        <input type="text" id="subagentSourceLabelEn" placeholder="e.g., Felix Financial Advisor">
+                    </div>
+                    <div class="form-group">
+                        <label for="subagentSourceLabelEs">Source Label (ES)</label>
+                        <input type="text" id="subagentSourceLabelEs" placeholder="e.g., Asesor Financiero Felix">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="subagentThreshold">Relevance Threshold (%)</label>
+                        <input type="number" id="subagentThreshold" min="0" max="100" value="80">
+                        <p class="form-help">Minimum relevance score (0-100)</p>
+                    </div>
+                    <div class="form-group">
+                        <label for="subagentPriority">Priority</label>
+                        <input type="number" id="subagentPriority" min="1" max="10" value="1">
+                        <p class="form-help">Higher priority wins ties</p>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="subagentModel">Model</label>
+                        <select id="subagentModel">
+                            <option value="claude-3-haiku-20240307">Claude 3 Haiku</option>
+                            <option value="claude-3-sonnet-20240229">Claude 3 Sonnet</option>
+                            <option value="gpt-4o-mini">GPT-4o Mini</option>
+                            <option value="gpt-4o">GPT-4o</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="subagentTemperature">Temperature</label>
+                        <input type="number" id="subagentTemperature" min="0" max="1" step="0.1" value="0.3">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="subagentCooldown">Cooldown (messages)</label>
+                        <input type="number" id="subagentCooldown" min="0" max="50" value="5">
+                    </div>
+                    <div class="form-group">
+                        <label for="subagentMaxLength">Max Tip Length (chars)</label>
+                        <input type="number" id="subagentMaxLength" min="50" max="1000" value="280">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="subagentLinkedAgent">Linked Agent ID (for takeover)</label>
+                    <input type="text" id="subagentLinkedAgent" placeholder="e.g., financial_advisor">
+                    <p class="form-help">Agent to activate when user engages. Leave empty if no takeover.</p>
+                </div>
+                <div class="form-group">
+                    <label for="subagentToneEn">Tone (EN)</label>
+                    <textarea id="subagentToneEn" rows="2" placeholder="e.g., friendly and helpful"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="subagentToneEs">Tone (ES)</label>
+                    <textarea id="subagentToneEs" rows="2" placeholder="e.g., amigable y servicial"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="subagentPromptEn">System Prompt Addition (EN)</label>
+                    <textarea id="subagentPromptEn" rows="3" placeholder="Additional instructions..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="subagentPromptEs">System Prompt Addition (ES)</label>
+                    <textarea id="subagentPromptEs" rows="3" placeholder="Instrucciones adicionales..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="subagentIntents">Activation Intents (comma-separated)</label>
+                    <input type="text" id="subagentIntents" placeholder="budgeting_help, savings_advice">
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-danger" id="deleteSubagentBtn" onclick="deleteSubagent()" style="display: none;">Delete</button>
+                    <div class="form-actions-right">
+                        <button type="button" class="btn btn-secondary" onclick="closeModal('subagentModal')">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Save</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- Toast Notification -->
     <div class="toast" id="toast"></div>
 
     <script src="agents.js"></script>
     <script src="tools.js"></script>
     <script src="flows.js"></script>
+    <script src="shadow.js"></script>
 </body>
 </html>

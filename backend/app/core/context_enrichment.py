@@ -40,6 +40,11 @@ class ContextEnrichment:
         """
         Fetch all required data upfront.
 
+        Enrichment happens in three layers:
+        1. Agent-level context requirements (from agent.context_requirements)
+        2. Flow on_enter actions (if in a flow)
+        3. Routing context requirements (from routing outcome)
+
         Args:
             session: Current conversation session
             agent: Current agent
@@ -50,7 +55,39 @@ class ContextEnrichment:
         """
         enriched_data = {}
 
-        # Execute on_enter actions if in flow
+        # LAYER 1: Agent-level context requirements
+        # These ensure agents get baseline context even without a flow
+        if agent.context_requirements:
+            logger.info(f"Processing agent-level context requirements for {agent.config_id}")
+            for req_config in agent.context_requirements:
+                req_type = req_config.get("type")
+
+                if req_type == "product_summary":
+                    # Fetch product-specific summary data
+                    product = req_config.get("productFilter")
+                    if product == "topups":
+                        # TopUps needs frequent numbers
+                        data = await self._fetch_context_requirement(
+                            "frequent_numbers", session, agent
+                        )
+                        if data:
+                            enriched_data["frequentNumbersData"] = data
+                            logger.info("Loaded frequent numbers for TopUps agent")
+
+                    elif product == "remittances":
+                        # Remittances needs recipient list
+                        data = await self._fetch_context_requirement(
+                            "recipient_list", session, agent
+                        )
+                        if data:
+                            enriched_data["recipientList"] = data
+                            logger.info("Loaded recipient list for Remittances agent")
+
+                elif req_type == "recent_transactions":
+                    # Could fetch recent transactions summary
+                    pass
+
+        # LAYER 2: Flow on_enter actions (if in a flow)
         if session.current_flow:
             flow_state = await self._get_current_flow_state(session)
             if flow_state and flow_state.on_enter:
@@ -61,16 +98,18 @@ class ContextEnrichment:
                     enriched_data
                 )
 
-        # Fetch additional context requirements from routing
+        # LAYER 3: Routing context requirements
         for requirement in context_requirements:
-            if requirement not in enriched_data:  # Don't duplicate if on_enter already fetched
+            if requirement not in enriched_data:  # Don't duplicate
                 data = await self._fetch_context_requirement(
                     requirement,
                     session,
                     agent
                 )
-                enriched_data[requirement] = data
+                if data:
+                    enriched_data[requirement] = data
 
+        logger.info(f"Context enrichment complete: {len(enriched_data)} total items")
         return enriched_data
 
     async def _get_current_flow_state(

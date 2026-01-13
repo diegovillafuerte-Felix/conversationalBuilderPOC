@@ -1,0 +1,90 @@
+{
+  "enabled": true,
+  "global_cooldown_messages": 3,
+  "max_messages_per_response": 1,
+  "subagents": [
+    {
+      "id": "financial_advisor",
+      "enabled": true,
+      "relevance_threshold": 90,
+      "model": "gpt-4o-mini",
+      "temperature": 0.3,
+      "priority": 1,
+      "full_agent_id": "financial_advisor",
+      "tone": {
+        "en": "friendly and helpful, like a knowledgeable friend who genuinely cares about your financial wellbeing",
+        "es": "amigable y servicial, como un amigo con conocimiento que genuinamente se preocupa por tu bienestar financiero"
+      },
+      "system_prompt_addition": {
+        "en": "Focus on practical, actionable tips about budgeting, savings, and fee optimization. Keep advice specific and relevant to the user's current activity. Avoid generic financial advice.",
+        "es": "Enfócate en consejos prácticos y accionables sobre presupuestos, ahorros y optimización de comisiones. Mantén los consejos específicos y relevantes a la actividad actual del usuario. Evita consejos financieros genéricos."
+      },
+      "activation_intents": [
+        "budgeting_help",
+        "savings_advice",
+        "fee_optimization",
+        "financial_planning",
+        "spending_analysis"
+      ],
+      "max_tip_length": 280,
+      "cooldown_messages": 5,
+      "source_label": {
+        "en": "Felix Financial Advisor",
+        "es": "Asesor Financiero Felix"
+      }
+    },
+    {
+      "id": "campaigns",
+      "enabled": false,
+      "relevance_threshold": 70,
+      "model": "gpt-4o-mini",
+      "temperature": 0.5,
+      "priority": 2,
+      "full_agent_id": null,
+      "tone": {
+        "en": "enthusiastic but not pushy, like sharing a good deal with a friend",
+        "es": "entusiasta pero no insistente, como compartir una buena oferta con un amigo"
+      },
+      "system_prompt_addition": {
+        "en": "Surface relevant promotions and new features only when contextually appropriate. Never interrupt important transactions. Be genuine - only mention offers that would truly benefit the user based on their current activity.",
+        "es": "Presenta promociones y nuevas funciones solo cuando sea contextualmente apropiado. Nunca interrumpas transacciones importantes. Sé genuino - solo menciona ofertas que realmente beneficiarían al usuario según su actividad actual."
+      },
+      "activation_intents": [],
+      "active_campaigns": [
+        {
+          "id": "referral_bonus",
+          "start": "2026-01-01",
+          "end": "2026-02-28",
+          "description": {
+            "en": "Refer a friend and get $10 when they make their first transfer!",
+            "es": "Refiere a un amigo y obtén $10 cuando haga su primera transferencia!"
+          }
+        },
+        {
+          "id": "new_corridor_mx",
+          "start": "2026-01-15",
+          "end": null,
+          "description": {
+            "en": "0% fees on your next 3 transfers to Mexico!",
+            "es": "0% de comisión en tus próximas 3 transferencias a México!"
+          }
+        },
+        {
+          "id": "wallet_bonus",
+          "start": "2026-01-01",
+          "end": "2026-01-31",
+          "description": {
+            "en": "Get 2% cashback when you add $100+ to your wallet!",
+            "es": "Obtén 2% de reembolso cuando agregues $100+ a tu billetera!"
+          }
+        }
+      ],
+      "max_tip_length": 200,
+      "cooldown_messages": 10,
+      "source_label": {
+        "en": "Felix",
+        "es": "Felix"
+      }
+    }
+  ]
+}

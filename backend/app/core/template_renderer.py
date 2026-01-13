@@ -108,6 +108,70 @@ class TemplateRenderer:
 
         return self.render(template.template, data)
 
+    def format_recipient_list(self, recipients: list) -> str:
+        """
+        Format a list of recipients into a numbered string.
+
+        Args:
+            recipients: List of recipient dicts with 'name', 'country_name', 'default_delivery_method'
+
+        Returns:
+            Formatted numbered list string
+        """
+        if not recipients:
+            return ""
+
+        lines = []
+        for i, recipient in enumerate(recipients, 1):
+            line = f"{i}. {recipient['name']} - {recipient['country_name']} ({recipient['default_delivery_method']})"
+            lines.append(line)
+
+        return "\n".join(lines)
+
+    def format_phone_list(self, numbers: list) -> str:
+        """
+        Format a list of phone numbers into a numbered string.
+
+        Args:
+            numbers: List of phone number dicts with 'nickname', 'phoneNumber', 'carrier'
+
+        Returns:
+            Formatted numbered list string
+        """
+        if not numbers:
+            return ""
+
+        lines = []
+        for i, num in enumerate(numbers, 1):
+            carrier = num.get('carrier', '').capitalize()
+            line = f"{i}. {num['nickname']}: {num['phoneNumber']} ({carrier})"
+            lines.append(line)
+
+        return "\n".join(lines)
+
+    def format_list(self, items: list, formatter: Optional[callable] = None) -> str:
+        """
+        Format a generic list into a numbered string.
+
+        Args:
+            items: List of items to format
+            formatter: Optional callable to format each item. If None, uses str()
+
+        Returns:
+            Formatted numbered list string
+        """
+        if not items:
+            return ""
+
+        if formatter is None:
+            formatter = str
+
+        lines = []
+        for i, item in enumerate(items, 1):
+            lines.append(f"{i}. {formatter(item)}")
+
+        return "\n".join(lines)
+
 
 # Global renderer instance
 _template_renderer: Optional[TemplateRenderer] = None

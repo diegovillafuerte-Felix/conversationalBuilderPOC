@@ -30,6 +30,9 @@ class ConversationSession(Base):
     # Pending confirmation: {toolName, toolParams, displayMessage, expiresAt}
     pending_confirmation: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
+    # Extended metadata for features like shadow service, analytics, etc.
+    session_metadata: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+
     # Status: active, completed, escalated, expired
     status: Mapped[str] = mapped_column(String(20), default="active", index=True)
 

@@ -9,6 +9,9 @@ export const useAdminStore = create((set, get) => ({
   isLoading: false,
   error: null,
 
+  // View state (agents or shadowService)
+  currentView: 'agents',
+
   // Toast state
   toast: null,
 
@@ -50,6 +53,10 @@ export const useAdminStore = create((set, get) => ({
 
   setActiveTab: (tab) => {
     set({ activeTab: tab });
+  },
+
+  setView: (view) => {
+    set({ currentView: view });
   },
 
   // Agent CRUD

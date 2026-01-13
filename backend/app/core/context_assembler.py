@@ -14,9 +14,6 @@ from app.models.conversation import ConversationMessage
 from app.models.subflow import Subflow, SubflowState
 from app.core.config_loader import load_prompts
 from app.core.i18n import (
-    get_localized,
-    get_base_system_prompt,
-    get_prompt_section,
     get_language_directive,
     DEFAULT_LANGUAGE,
 )
@@ -105,29 +102,30 @@ class ContextAssembler:
         # 1. Build system prompt sections
         sections = []
 
-        # Base system prompt (from JSON config)
-        base_prompt = get_base_system_prompt(language)
+        # Base system prompt (from JSON config) - always in English
+        prompts = load_prompts()
+        base_prompt = prompts.get("base_system_prompt", "")
         sections.append(base_prompt)
         token_counts["base_prompt"] = count_tokens(base_prompt)
 
-        # Agent description
-        agent_section = self._build_agent_section(agent, language)
+        # Agent description - always in English
+        agent_section = self._build_agent_section(agent)
         agent_section = truncate_to_tokens(
             agent_section, self.budgets["system_prompt"] - token_counts["base_prompt"]
         )
         sections.append(agent_section)
         token_counts["agent_description"] = count_tokens(agent_section)
 
-        # User profile
+        # User profile - always in English
         if user_context:
-            user_section = self._build_user_section(user_context, language)
+            user_section = self._build_user_section(user_context)
             user_section = truncate_to_tokens(user_section, self.budgets["user_profile"])
             sections.append(user_section)
             token_counts["user_profile"] = count_tokens(user_section)
 
-        # Product context (if in a product agent)
+        # Product context (if in a product agent) - always in English
         if user_context and agent.parent_agent_id:
-            product_section = self._build_product_context(user_context, agent, language)
+            product_section = self._build_product_context(user_context, agent)
             if product_section:
                 product_section = truncate_to_tokens(
                     product_section, self.budgets["product_context"]
@@ -135,13 +133,10 @@ class ContextAssembler:
                 sections.append(product_section)
                 token_counts["product_context"] = count_tokens(product_section)
 
-        # Compacted history
+        # Compacted history - always in English
         if compacted_history:
-            prompts = load_prompts()
-            history_template = get_localized(
-                prompts.get("sections", {}).get("previous_history", {}),
-                language,
-                "\n## Previous Conversation History\n{history}"
+            history_template = prompts.get("sections", {}).get(
+                "previous_history", "\n## Previous Conversation History\n{history}"
             )
             history_section = history_template.format(history=compacted_history)
             history_section = truncate_to_tokens(
@@ -150,21 +145,29 @@ class ContextAssembler:
             sections.append(history_section)
             token_counts["compacted_history"] = count_tokens(history_section)
 
-        # Current flow state
+        # Current flow state - always in English
         if session.current_flow and current_flow_state:
-            state_section = self._build_flow_state_section(session, current_flow_state, language)
+            state_section = self._build_flow_state_section(session, current_flow_state)
             state_section = truncate_to_tokens(state_section, self.budgets["current_state"])
             sections.append(state_section)
             token_counts["flow_state"] = count_tokens(state_section)
 
-        # Pending confirmation
+        # Agent-enriched data (if not in a flow) - always in English
+        if not session.current_flow and session.session_metadata:
+            agent_data = session.session_metadata.get("agent_enriched_data")
+            if agent_data:
+                agent_data_section = self._format_agent_enriched_data(agent_data)
+                sections.append(agent_data_section)
+                token_counts["agent_enriched_data"] = count_tokens(agent_data_section)
+
+        # Pending confirmation - always in English
         if session.pending_confirmation:
-            confirm_section = self._build_confirmation_section(session, language)
+            confirm_section = self._build_confirmation_section(session)
             sections.append(confirm_section)
             token_counts["pending_confirmation"] = count_tokens(confirm_section)
 
-        # Build navigation instructions
-        nav_section = self._build_navigation_section(agent, language)
+        # Build navigation instructions - always in English
+        nav_section = self._build_navigation_section(agent)
         sections.append(nav_section)
         token_counts["navigation"] = count_tokens(nav_section)
 
@@ -195,8 +198,8 @@ class ContextAssembler:
         })
         token_counts["messages"] = sum(count_tokens(m["content"]) for m in messages)
 
-        # 3. Build tools array
-        tools = self._build_tools(agent, current_flow_state, language)
+        # 3. Build tools array - always in English
+        tools = self._build_tools(agent, current_flow_state)
         token_counts["tools"] = count_tokens(str(tools))
 
         # 4. Get model config
@@ -215,19 +218,22 @@ class ContextAssembler:
             token_counts=token_counts,
         )
 
-    def _build_agent_section(self, agent: Agent, language: str) -> str:
+    def _build_agent_section(self, agent: Agent) -> str:
         """Build the agent role section."""
         prompts = load_prompts()
-        role_template = get_localized(
-            prompts.get("sections", {}).get("your_current_role", {}),
-            language,
-            "\n## Your Current Role\n{description}"
+        role_template = prompts.get("sections", {}).get(
+            "your_current_role", "\n## Your Current Role\n{description}"
         )
 
-        # Get localized agent description if available in config_json
+        # Get agent description - now a plain string
         description = agent.description
         if agent.config_json and "description" in agent.config_json:
-            description = get_localized(agent.config_json["description"], language, description)
+            desc = agent.config_json["description"]
+            # Handle both plain string and legacy dict format during transition
+            if isinstance(desc, str):
+                description = desc
+            elif isinstance(desc, dict):
+                description = desc.get("en", description)
 
         section = role_template.format(description=description)
 
@@ -235,39 +241,38 @@ class ContextAssembler:
         if agent.system_prompt_addition:
             addition = agent.system_prompt_addition
             if agent.config_json and "system_prompt_addition" in agent.config_json:
-                addition = get_localized(
-                    agent.config_json["system_prompt_addition"], language, addition
-                )
+                spa = agent.config_json["system_prompt_addition"]
+                # Handle both plain string and legacy dict format during transition
+                if isinstance(spa, str):
+                    addition = spa
+                elif isinstance(spa, dict):
+                    addition = spa.get("en", addition)
             section += f"\n\n{addition}"
 
         return section
 
-    def _build_user_section(self, user_context: UserContext, language: str) -> str:
+    def _build_user_section(self, user_context: UserContext) -> str:
         """Build the user profile section."""
         prompts = load_prompts()
         sections_config = prompts.get("sections", {})
 
         name = user_context.get_preferred_name()
 
-        user_template = get_localized(
-            sections_config.get("user_section", {}),
-            language,
-            "\n## User\nName: {name}"
+        user_template = sections_config.get(
+            "user_section", "\n## User\nName: {name}"
         )
         sections = [user_template.format(name=name)]
 
         if user_context.behavioral_summary:
-            context_template = get_localized(
-                sections_config.get("user_context", {}),
-                language,
-                "\n## User Context\n{behavioral_summary}"
+            context_template = sections_config.get(
+                "user_context", "\n## User Context\n{behavioral_summary}"
             )
             sections.append(context_template.format(behavioral_summary=user_context.behavioral_summary))
 
         return "\n".join(sections)
 
     def _build_product_context(
-        self, user_context: UserContext, agent: Agent, language: str
+        self, user_context: UserContext, agent: Agent
     ) -> Optional[str]:
         """Build product-specific context based on the agent."""
         if not user_context.product_summaries:
@@ -283,10 +288,8 @@ class ContextAssembler:
         }
 
         prompts = load_prompts()
-        product_template = get_localized(
-            prompts.get("sections", {}).get("product_context", {}),
-            language,
-            "\n## {agent_name} Context\n{summary}"
+        product_template = prompts.get("sections", {}).get(
+            "product_context", "\n## {agent_name} Context\n{summary}"
         )
 
         agent_name_lower = agent.name.lower()
@@ -294,7 +297,7 @@ class ContextAssembler:
             if key in agent_name_lower:
                 summary = user_context.product_summaries.get(product_key)
                 if summary:
-                    formatted_summary = self._format_product_summary(product_key, summary, language)
+                    formatted_summary = self._format_product_summary(product_key, summary)
                     return product_template.format(
                         agent_name=agent.name,
                         summary=formatted_summary
@@ -302,7 +305,7 @@ class ContextAssembler:
 
         return None
 
-    def _format_product_summary(self, product: str, summary: dict, language: str) -> str:
+    def _format_product_summary(self, product: str, summary: dict) -> str:
         """Format a product summary for the prompt."""
         prompts = load_prompts()
         labels = prompts.get("sections", {}).get("product_labels", {})
@@ -311,58 +314,61 @@ class ContextAssembler:
         if product == "remittances":
             remit_labels = labels.get("remittances", {})
             if "lifetimeCount" in summary:
-                label = get_localized(remit_labels.get("lifetime_count", {}), language, "Total transfers")
+                label = remit_labels.get("lifetime_count", "Total transfers")
                 lines.append(f"- {label}: {summary['lifetimeCount']}")
             if "lastTransactionAt" in summary:
-                label = get_localized(remit_labels.get("last_transaction", {}), language, "Last transfer")
+                label = remit_labels.get("last_transaction", "Last transfer")
                 lines.append(f"- {label}: {summary['lastTransactionAt']}")
             if "frequentRecipients" in summary:
                 recipients = summary["frequentRecipients"]
                 if recipients:
                     names = [r.get("name", "Unknown") for r in recipients[:3]]
-                    label = get_localized(remit_labels.get("frequent_recipients", {}), language, "Frequent recipients")
+                    label = remit_labels.get("frequent_recipients", "Frequent recipients")
                     lines.append(f"- {label}: {', '.join(names)}")
 
         elif product == "credit":
             credit_labels = labels.get("credit", {})
             if "hasActiveCredit" in summary:
-                label = get_localized(credit_labels.get("active_credit", {}), language, "Active credit")
-                yes_no = get_localized(credit_labels.get("yes" if summary["hasActiveCredit"] else "no", {}), language, "Yes" if summary["hasActiveCredit"] else "No")
+                label = credit_labels.get("active_credit", "Active credit")
+                yes_no = credit_labels.get("yes" if summary["hasActiveCredit"] else "no", "Yes" if summary["hasActiveCredit"] else "No")
                 lines.append(f"- {label}: {yes_no}")
             if "currentBalance" in summary:
-                label = get_localized(credit_labels.get("current_balance", {}), language, "Current balance")
+                label = credit_labels.get("current_balance", "Current balance")
                 lines.append(f"- {label}: ${summary['currentBalance']:.2f}")
             if "creditLimit" in summary:
-                label = get_localized(credit_labels.get("limit", {}), language, "Limit")
+                label = credit_labels.get("limit", "Limit")
                 lines.append(f"- {label}: ${summary['creditLimit']:.2f}")
 
         elif product == "wallet":
             wallet_labels = labels.get("wallet", {})
             if "currentBalance" in summary:
-                label = get_localized(wallet_labels.get("balance", {}), language, "Balance")
+                label = wallet_labels.get("balance", "Balance")
                 lines.append(f"- {label}: ${summary['currentBalance']:.2f}")
 
         return "\n".join(lines) if lines else str(summary)
 
     def _build_flow_state_section(
-        self, session: ConversationSession, state: SubflowState, language: str
+        self, session: ConversationSession, state: SubflowState
     ) -> str:
         """Build the current flow state section."""
         flow = session.current_flow or {}
         prompts = load_prompts()
 
-        flow_template = get_localized(
-            prompts.get("sections", {}).get("flow_state", {}),
-            language,
+        flow_template = prompts.get("sections", {}).get(
+            "flow_state",
             "\n## Current Flow State\nFlow: {flow_id}\nState: {state_id}\n\n### Instructions for this state:\n{instructions}"
         )
 
-        # Get localized instructions if available in state config
+        # Get instructions - now a plain string
         instructions = state.agent_instructions
         if hasattr(state, 'config_json') and state.config_json:
-            agent_instr = state.config_json.get("agent_instructions", {})
-            if isinstance(agent_instr, dict):
-                instructions = get_localized(agent_instr, language, instructions)
+            agent_instr = state.config_json.get("agent_instructions")
+            if agent_instr:
+                # Handle both plain string and legacy dict format during transition
+                if isinstance(agent_instr, str):
+                    instructions = agent_instr
+                elif isinstance(agent_instr, dict):
+                    instructions = agent_instr.get("en", instructions)
 
         section = flow_template.format(
             flow_id=flow.get('flowId', 'unknown'),
@@ -370,24 +376,61 @@ class ContextAssembler:
             instructions=instructions
         )
 
+        # Add enriched context data section if available
         if flow.get("stateData"):
-            collected_template = get_localized(
-                prompts.get("sections", {}).get("collected_data", {}),
-                language,
-                "\nCollected data: {data}"
-            )
-            section += collected_template.format(data=flow['stateData'])
+            section += self._format_enriched_data(flow['stateData'])
 
         return section
 
-    def _build_confirmation_section(self, session: ConversationSession, language: str) -> str:
+    def _format_enriched_data(self, state_data: dict) -> str:
+        """
+        Format enriched data for LLM visibility.
+        Shows all eagerly-loaded data in a clear, structured format.
+        """
+        if not state_data:
+            return ""
+
+        import json
+
+        section = "\n\n### Available Context Data\n\n"
+        section += "The following data has been loaded for you to use in your response. "
+        section += "**Do not call tools to fetch this data again** - it is already provided below. "
+        section += "Format and present it naturally:\n\n"
+
+        for key, value in state_data.items():
+            section += f"**{key}:**\n"
+            section += f"```json\n{json.dumps(value, indent=2, ensure_ascii=False)}\n```\n\n"
+
+        return section
+
+    def _format_agent_enriched_data(self, agent_data: dict) -> str:
+        """
+        Format agent-level enriched data for LLM visibility.
+        Similar to _format_enriched_data but for agent-level context.
+        """
+        if not agent_data:
+            return ""
+
+        import json
+
+        section = "\n## Agent Context Data\n\n"
+        section += "The following data has been loaded for this agent to use in your response. "
+        section += "**Do not call tools to fetch this data again** - it is already provided below. "
+        section += "Format and present it naturally:\n\n"
+
+        for key, value in agent_data.items():
+            section += f"**{key}:**\n"
+            section += f"```json\n{json.dumps(value, indent=2, ensure_ascii=False)}\n```\n\n"
+
+        return section
+
+    def _build_confirmation_section(self, session: ConversationSession) -> str:
         """Build the pending confirmation section."""
         pending = session.pending_confirmation
         prompts = load_prompts()
 
-        confirm_template = get_localized(
-            prompts.get("sections", {}).get("confirmation_pending", {}),
-            language,
+        confirm_template = prompts.get("sections", {}).get(
+            "confirmation_pending",
             "\n## PENDING CONFIRMATION\nThe user must confirm the following action before you can proceed:\n{display_message}\n\nWait for explicit confirmation before executing {tool_name}."
         )
 
@@ -396,7 +439,7 @@ class ContextAssembler:
             tool_name=pending.get('toolName', '')
         )
 
-    def _build_navigation_section(self, agent: Agent, language: str) -> str:
+    def _build_navigation_section(self, agent: Agent) -> str:
         """Build navigation instructions based on agent capabilities."""
         nav = agent.navigation_tools or {}
         lines = []
@@ -405,49 +448,43 @@ class ContextAssembler:
 
         # Core instruction for all non-root agents about scope awareness
         if agent.parent_agent_id is not None:
-            scope_rule = get_localized(
-                sections_config.get("scope_rule", {}),
-                language,
+            scope_rule = sections_config.get(
+                "scope_rule",
                 "\n## CRITICAL SCOPE RULE\nYou have a specific scope. If the user asks for anything outside that scope, call go_home immediately."
             )
             lines.append(scope_rule)
 
-        nav_header = get_localized(
-            sections_config.get("navigation", {}),
-            language,
-            "\n## Navigation"
-        )
+        nav_header = sections_config.get("navigation", "\n## Navigation")
         # Only add header if it's not already a full section
         if "go_home" not in nav_header and "escalate" not in nav_header:
-            lines.append("\n## Navigation" if language == "en" else "\n## Navegación")
+            lines.append("\n## Navigation")
 
             # go_home is automatic for non-root agents
             if agent.parent_agent_id is not None:
-                go_home_text = "Use 'go_home' to transfer to main assistant" if language == "en" else "Usa 'go_home' para transferir al asistente principal"
-                lines.append(f"- {go_home_text}")
+                lines.append("- Use 'go_home' to transfer to main assistant")
             if nav.get("canGoUp"):
-                up_text = "Use 'up_one_level' to go back to previous menu" if language == "en" else "Usa 'up_one_level' para volver al menú anterior"
-                lines.append(f"- {up_text}")
+                lines.append("- Use 'up_one_level' to go back to previous menu")
             if nav.get("canEscalate"):
-                escalate_text = "Use 'escalate_to_human' if user needs to speak with a person" if language == "en" else "Usa 'escalate_to_human' si el usuario necesita hablar con una persona"
-                lines.append(f"- {escalate_text}")
+                lines.append("- Use 'escalate_to_human' if user needs to speak with a person")
 
         return "\n".join(lines)
 
     def _build_tools(
-        self, agent: Agent, current_flow_state: Optional[SubflowState] = None, language: str = DEFAULT_LANGUAGE
+        self, agent: Agent, current_flow_state: Optional[SubflowState] = None
     ) -> List[dict]:
         """Build the tools array for OpenAI."""
         tools = []
 
         # Add agent-level tools
         for tool in agent.tools:
-            tools.append(self._tool_to_openai(tool, language))
+            tools.append(self._tool_to_openai(tool))
 
         # Add state-specific tools if in a flow
         if current_flow_state and current_flow_state.state_tools:
-            for tool_def in current_flow_state.state_tools:
-                tools.append(self._inline_tool_to_openai(tool_def, language))
+            resolved_state_tools = self._resolve_state_tools(
+                current_flow_state.state_tools, agent
+            )
+            tools.extend(resolved_state_tools)
 
         # Add navigation tools
         nav = agent.navigation_tools or {}
@@ -456,9 +493,8 @@ class ContextAssembler:
 
         # go_home is a CORE SYSTEM TOOL - automatically available to all non-root agents
         if agent.parent_agent_id is not None:
-            go_home_desc = get_localized(
-                sections_config.get("go_home_tool", {}),
-                language,
+            go_home_desc = sections_config.get(
+                "go_home_tool",
                 "Transfer the conversation to the main assistant. Use this when the user asks for something outside your scope."
             )
             tools.append({
@@ -469,9 +505,8 @@ class ContextAssembler:
 
         # Optional navigation tools (configured per agent)
         if nav.get("canGoUp"):
-            up_desc = get_localized(
-                sections_config.get("up_one_level_tool", {}),
-                language,
+            up_desc = sections_config.get(
+                "up_one_level_tool",
                 "Go back to the previous agent/menu"
             )
             tools.append({
@@ -481,14 +516,12 @@ class ContextAssembler:
             })
 
         if nav.get("canEscalate"):
-            escalate_desc = get_localized(
-                sections_config.get("escalate_to_human_tool", {}),
-                language,
+            escalate_desc = sections_config.get(
+                "escalate_to_human_tool",
                 "Escalate to a human agent when the user requests it or when you cannot resolve the issue"
             )
-            reason_desc = get_localized(
-                sections_config.get("escalation_reason", {}),
-                language,
+            reason_desc = sections_config.get(
+                "escalation_reason",
                 "Reason for escalation"
             )
             tools.append({
@@ -508,26 +541,36 @@ class ContextAssembler:
 
         return tools
 
-    def _tool_to_openai(self, tool: Tool, language: str) -> dict:
-        """Convert a Tool model to OpenAI format with localization."""
+    def _tool_to_openai(self, tool: Tool) -> dict:
+        """Convert a Tool model to OpenAI format."""
         properties = {}
         required = []
 
-        # Get localized description
+        # Get description - now a plain string
         description = tool.description
         if tool.config_json and "description" in tool.config_json:
-            description = get_localized(tool.config_json["description"], language, description)
+            desc = tool.config_json["description"]
+            # Handle both plain string and legacy dict format during transition
+            if isinstance(desc, str):
+                description = desc
+            elif isinstance(desc, dict):
+                description = desc.get("en", description)
 
         for param in tool.parameters:
             prop = {"type": param.get("type", "string")}
             param_desc = param.get("description", "")
 
-            # Check for localized description in config_json
+            # Check for description in config_json (now plain strings)
             if tool.config_json:
                 params_config = tool.config_json.get("parameters", [])
                 for p in params_config:
                     if p.get("name") == param.get("name") and "description" in p:
-                        param_desc = get_localized(p["description"], language, param_desc)
+                        pd = p["description"]
+                        # Handle both plain string and legacy dict format during transition
+                        if isinstance(pd, str):
+                            param_desc = pd
+                        elif isinstance(pd, dict):
+                            param_desc = pd.get("en", param_desc)
                         break
 
             if param_desc:
@@ -547,21 +590,57 @@ class ContextAssembler:
             },
         }
 
-    def _inline_tool_to_openai(self, tool_def: dict, language: str = DEFAULT_LANGUAGE) -> dict:
+    def _resolve_state_tools(
+        self, state_tools: List, agent: Agent
+    ) -> List[dict]:
+        """
+        Resolve state_tools which may be tool name strings or inline definitions.
+
+        Args:
+            state_tools: List of either tool name strings or inline tool dicts
+            agent: Current agent to look up tool definitions
+
+        Returns:
+            List of resolved tool definitions in OpenAI format
+        """
+        resolved = []
+        for tool_ref in state_tools:
+            if isinstance(tool_ref, str):
+                # It's a tool name reference - look up from agent's tools
+                found = False
+                for tool in agent.tools:
+                    if tool.name == tool_ref:
+                        resolved.append(self._tool_to_openai(tool))
+                        found = True
+                        break
+                if not found:
+                    logger.warning(
+                        f"State tool '{tool_ref}' not found in agent {agent.config_id}"
+                    )
+            elif isinstance(tool_ref, dict):
+                # It's an inline tool definition
+                resolved.append(self._inline_tool_to_openai(tool_ref))
+            else:
+                logger.warning(f"Unknown state_tools entry type: {type(tool_ref)}")
+        return resolved
+
+    def _inline_tool_to_openai(self, tool_def: dict) -> dict:
         """Convert an inline tool definition to OpenAI format."""
         properties = {}
         required = []
 
-        # Get localized description
+        # Get description - now a plain string
         description = tool_def.get("description", "")
+        # Handle both plain string and legacy dict format during transition
         if isinstance(description, dict):
-            description = get_localized(description, language, "")
+            description = description.get("en", "")
 
         for param in tool_def.get("parameters", []):
             prop = {"type": param.get("type", "string")}
             param_desc = param.get("description", "")
+            # Handle both plain string and legacy dict format during transition
             if isinstance(param_desc, dict):
-                param_desc = get_localized(param_desc, language, "")
+                param_desc = param_desc.get("en", "")
             if param_desc:
                 prop["description"] = param_desc
             properties[param["name"]] = prop

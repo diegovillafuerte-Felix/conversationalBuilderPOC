@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useAdminStore } from '../../store/adminStore';
 import Sidebar from './Sidebar/Sidebar';
 import AgentDetail from './AgentDetail/AgentDetail';
+import ShadowServicePage from './ShadowService/ShadowServicePage';
 import Toast from './Common/Toast';
 import AgentModal from './Modals/AgentModal';
 import ToolModal from './Modals/ToolModal';
@@ -13,6 +14,7 @@ import ConfirmModal from './Modals/ConfirmModal';
 export default function AdminLayout() {
   const loadAgents = useAdminStore((state) => state.loadAgents);
   const openModal = useAdminStore((state) => state.openModal);
+  const currentView = useAdminStore((state) => state.currentView);
 
   useEffect(() => {
     loadAgents();
@@ -22,7 +24,8 @@ export default function AdminLayout() {
     <div className="admin-container">
       <Sidebar />
       <main className="main-content">
-        <AgentDetail />
+        {currentView === 'agents' && <AgentDetail />}
+        {currentView === 'shadowService' && <ShadowServicePage />}
       </main>
 
       {/* Modals */}

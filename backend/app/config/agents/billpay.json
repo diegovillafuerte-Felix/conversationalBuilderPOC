@@ -1,13 +1,7 @@
 {
   "id": "billpay",
-  "name": {
-    "en": "Bill Pay Agent",
-    "es": "Agente de Pago de Servicios"
-  },
-  "description": {
-    "en": "I'm the Felix bill payment specialist. I can help you with:\n- Paying services like CFE (electricity), Telmex, Izzi, etc.\n- Viewing your saved services\n- Checking the amount due for a service\n- Viewing your payment history\n\nPayments are applied in 24-48 hours.",
-    "es": "Soy el especialista en pago de servicios de Felix. Puedo ayudarte a:\n- Pagar servicios como CFE (luz), Telmex, Izzi, etc.\n- Ver tus servicios guardados\n- Consultar el monto a pagar de un servicio\n- Ver tu historial de pagos\n\nLos pagos se aplican en 24-48 horas."
-  },
+  "name": "Bill Pay Agent",
+  "description": "I'm the Felix bill payment specialist. I can help you with:\n- Paying services like CFE (electricity), Telmex, Izzi, etc.\n- Viewing your saved services\n- Checking the amount due for a service\n- Viewing your payment history\n\nPayments are applied in 24-48 hours.",
   "model_config": {
     "model": "gpt-4o",
     "temperature": 0.5,
@@ -25,19 +19,13 @@
   "tools": [
     {
       "name": "get_billers",
-      "description": {
-        "en": "Gets the list of available services to pay.",
-        "es": "Obtiene la lista de servicios disponibles para pagar."
-      },
+      "description": "Gets the list of available services to pay.",
       "parameters": [
         {
           "name": "category",
           "type": "string",
           "required": false,
-          "description": {
-            "en": "Category (utilities, telecom). If not specified, shows all.",
-            "es": "Categoría (utilities, telecom). Si no se especifica, muestra todos."
-          }
+          "description": "Category (utilities, telecom). If not specified, shows all."
         }
       ],
       "side_effects": "read",
@@ -45,38 +33,26 @@
     },
     {
       "name": "get_saved_billers",
-      "description": {
-        "en": "Gets the user's saved services.",
-        "es": "Obtiene los servicios guardados del usuario."
-      },
+      "description": "Gets the user's saved services.",
       "parameters": [],
       "side_effects": "read",
       "requires_confirmation": false
     },
     {
       "name": "get_bill_details",
-      "description": {
-        "en": "Checks the amount due for a service.",
-        "es": "Consulta el monto a pagar de un servicio."
-      },
+      "description": "Checks the amount due for a service.",
       "parameters": [
         {
           "name": "biller_id",
           "type": "string",
           "required": true,
-          "description": {
-            "en": "Service ID (cfe, telmex, etc.)",
-            "es": "ID del servicio (cfe, telmex, etc.)"
-          }
+          "description": "Service ID (cfe, telmex, etc.)"
         },
         {
           "name": "account_number",
           "type": "string",
           "required": true,
-          "description": {
-            "en": "Account or service number",
-            "es": "Número de cuenta o servicio"
-          }
+          "description": "Account or service number"
         }
       ],
       "side_effects": "read",
@@ -84,44 +60,29 @@
     },
     {
       "name": "pay_bill",
-      "description": {
-        "en": "Pays a service.",
-        "es": "Paga un servicio."
-      },
+      "description": "Pays a service.",
       "parameters": [
         {
           "name": "biller_id",
           "type": "string",
           "required": true,
-          "description": {
-            "en": "Service ID",
-            "es": "ID del servicio"
-          }
+          "description": "Service ID"
         },
         {
           "name": "account_number",
           "type": "string",
           "required": true,
-          "description": {
-            "en": "Account number",
-            "es": "Número de cuenta"
-          }
+          "description": "Account number"
         },
         {
           "name": "amount",
           "type": "number",
           "required": true,
-          "description": {
-            "en": "Amount to pay in MXN",
-            "es": "Monto a pagar en MXN"
-          }
+          "description": "Amount to pay in MXN"
         }
       ],
       "requires_confirmation": true,
-      "confirmation_template": {
-        "en": "Confirm paying ${amount} MXN to the service?",
-        "es": "¿Confirmas pagar ${amount} MXN al servicio?"
-      },
+      "confirmation_template": "Confirm paying ${amount} MXN to the service?",
       "side_effects": "financial"
     }
   ]

@@ -14,7 +14,7 @@ A proof-of-concept multi-agent conversational AI system for handling financial p
 - **Backend**: Python + FastAPI
 - **Database**: PostgreSQL
 - **Cache**: Redis
-- **LLM**: Anthropic Claude (claude-sonnet-4-5)
+- **LLM**: OpenAI GPT-4o
 - **Frontend**: Simple HTML/CSS/JS chat interface
 
 ## Quick Start
@@ -24,7 +24,7 @@ A proof-of-concept multi-agent conversational AI system for handling financial p
 - Python 3.11+
 - PostgreSQL 15+
 - Redis 7+
-- Anthropic API key
+- OpenAI API key
 
 ### Option 1: Docker Compose (Recommended)
 
@@ -33,9 +33,9 @@ A proof-of-concept multi-agent conversational AI system for handling financial p
    cp backend/.env.example backend/.env
    ```
 
-2. Edit `backend/.env` and add your Anthropic API key:
+2. Edit `backend/.env` and add your OpenAI API key:
    ```
-   ANTHROPIC_API_KEY=your_key_here
+   OPENAI_API_KEY=your_key_here
    ```
 
 3. Start all services:

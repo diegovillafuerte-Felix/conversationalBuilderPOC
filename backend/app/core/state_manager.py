@@ -1,5 +1,6 @@
 """State manager for conversation sessions and flow state."""
 
+import copy
 import logging
 from datetime import datetime, timedelta
 from typing import Optional
@@ -76,25 +77,106 @@ class StateManager:
         return result.scalar_one_or_none()
 
     async def push_agent(
-        self, session: ConversationSession, agent_id: str, reason: str
+        self,
+        session: ConversationSession,
+        agent_id: str,
+        reason: str,
+        preserve_flow: bool = False,
     ) -> ConversationSession:
-        """Push a new agent onto the session's agent stack."""
-        session.push_agent(agent_id, reason)
-        # Clear any active flow when changing agents
-        session.current_flow = None
-        session.pending_confirmation = None
-        logger.info(f"Session {session.session_id}: pushed agent {agent_id}")
-        return session
+        """
+        Push a new agent onto the session's agent stack with row-level locking.
+
+        Args:
+            session: The conversation session
+            agent_id: ID of the agent to push
+            reason: Reason for entering this agent
+            preserve_flow: If True, preserve current flow state for resumption
+                          when returning to previous agent (used by shadow service)
+
+        Returns:
+            Updated session with locked changes committed
+        """
+        # Re-fetch session with FOR UPDATE lock to prevent race conditions
+        result = await self.db.execute(
+            select(ConversationSession)
+            .where(ConversationSession.session_id == session.session_id)
+            .with_for_update()
+        )
+        locked_session = result.scalar_one()
+
+        # Store current flow state if preserving
+        if preserve_flow and locked_session.current_flow:
+            # Store the preserved flow in the current stack frame before pushing
+            if locked_session.agent_stack:
+                current_frame = locked_session.agent_stack[-1]
+                # Deep copy to avoid reference issues
+                current_frame["preservedFlow"] = copy.deepcopy(locked_session.current_flow)
+                current_frame["preservedConfirmation"] = copy.deepcopy(
+                    locked_session.pending_confirmation
+                )
+                # Explicit reassignment for SQLAlchemy change detection
+                locked_session.agent_stack = locked_session.agent_stack.copy()
+
+        locked_session.push_agent(agent_id, reason)
+
+        # Clear flow state for the new agent
+        locked_session.current_flow = None
+        locked_session.pending_confirmation = None
+
+        await self.db.flush()  # Persist and release lock
+
+        logger.info(
+            f"Session {locked_session.session_id}: pushed agent {agent_id}"
+            f"{' (flow preserved)' if preserve_flow else ''}"
+        )
+        return locked_session
 
     async def pop_agent(self, session: ConversationSession) -> Optional[str]:
-        """Pop the current agent and return the new current agent ID."""
-        popped = session.pop_agent()
+        """
+        Pop the current agent and return the new current agent ID with row-level locking.
+
+        If the previous agent had a preserved flow state (from shadow takeover),
+        restore it so the user can continue where they left off.
+        """
+        # Re-fetch session with FOR UPDATE lock
+        result = await self.db.execute(
+            select(ConversationSession)
+            .where(ConversationSession.session_id == session.session_id)
+            .with_for_update()
+        )
+        locked_session = result.scalar_one()
+
+        popped = locked_session.pop_agent()
         if popped:
-            # Clear flow state
-            session.current_flow = None
-            session.pending_confirmation = None
-            logger.info(f"Session {session.session_id}: popped agent {popped.get('agentId')}")
-            return session.get_current_agent_id()
+            logger.info(f"Session {locked_session.session_id}: popped agent {popped.get('agentId')}")
+
+            # Check if the new current agent has a preserved flow to restore
+            if locked_session.agent_stack:
+                current_frame = locked_session.agent_stack[-1]
+                preserved_flow = current_frame.pop("preservedFlow", None)
+                preserved_confirmation = current_frame.pop("preservedConfirmation", None)
+
+                if preserved_flow:
+                    locked_session.current_flow = preserved_flow
+                    locked_session.pending_confirmation = preserved_confirmation
+                    # Explicit reassignment for change detection
+                    locked_session.agent_stack = locked_session.agent_stack.copy()
+                    logger.info(
+                        f"Session {locked_session.session_id}: restored preserved flow "
+                        f"state {preserved_flow.get('currentState')}"
+                    )
+                else:
+                    # No preserved flow, clear state as before
+                    locked_session.current_flow = None
+                    locked_session.pending_confirmation = None
+            else:
+                locked_session.current_flow = None
+                locked_session.pending_confirmation = None
+
+            await self.db.flush()  # Persist and release lock
+            return locked_session.get_current_agent_id()
+
+        await self.db.flush()  # Release lock even if nothing was popped
         return None
 
     async def go_home(self, session: ConversationSession) -> str:
@@ -118,6 +200,13 @@ class StateManager:
         self, session: ConversationSession, subflow: Subflow
     ) -> ConversationSession:
         """Enter a subflow."""
+        # Check if already in this flow (prevent duplicate entries)
+        if session.current_flow and session.current_flow.get("flowId") == str(subflow.id):
+            logger.warning(
+                f"Already in flow {subflow.name} (ID: {subflow.id}) - ignoring duplicate entry"
+            )
+            return session
+
         session.current_flow = {
             "flowId": str(subflow.id),
             "currentState": subflow.initial_state,
@@ -132,33 +221,52 @@ class StateManager:
     async def transition_state(
         self, session: ConversationSession, new_state_id: str, state_def: SubflowState
     ) -> ConversationSession:
-        """Transition to a new state within the current flow."""
-        if not session.current_flow:
+        """Transition to a new state within the current flow with row-level locking."""
+        # Re-fetch session with FOR UPDATE lock
+        result = await self.db.execute(
+            select(ConversationSession)
+            .where(ConversationSession.session_id == session.session_id)
+            .with_for_update()
+        )
+        locked_session = result.scalar_one()
+
+        if not locked_session.current_flow:
             raise ValueError("Not in a flow")
 
-        old_state = session.current_flow.get("currentState")
-        session.current_flow["currentState"] = new_state_id
+        old_state = locked_session.current_flow.get("currentState")
+        locked_session.current_flow["currentState"] = new_state_id
 
         logger.info(
-            f"Session {session.session_id}: state transition {old_state} -> {new_state_id}"
+            f"Session {locked_session.session_id}: state transition {old_state} -> {new_state_id}"
         )
 
         # Check if terminal state
         if state_def.is_final:
-            logger.info(f"Session {session.session_id}: reached terminal state, exiting flow")
-            session.current_flow = None
+            logger.info(f"Session {locked_session.session_id}: reached terminal state, exiting flow")
+            locked_session.current_flow = None
 
-        return session
+        await self.db.flush()  # Persist and release lock
+        return locked_session
 
     async def update_flow_data(
         self, session: ConversationSession, data: dict
     ) -> ConversationSession:
-        """Update the data collected during the flow."""
-        if session.current_flow:
-            current_data = session.current_flow.get("stateData", {})
+        """Update the data collected during the flow with row-level locking."""
+        # Re-fetch session with FOR UPDATE lock
+        result = await self.db.execute(
+            select(ConversationSession)
+            .where(ConversationSession.session_id == session.session_id)
+            .with_for_update()
+        )
+        locked_session = result.scalar_one()
+
+        if locked_session.current_flow:
+            current_data = locked_session.current_flow.get("stateData", {})
             current_data.update(data)
-            session.current_flow["stateData"] = current_data
-        return session
+            locked_session.current_flow["stateData"] = current_data
+
+        await self.db.flush()  # Persist and release lock
+        return locked_session
 
     async def set_pending_confirmation(
         self,
@@ -168,15 +276,25 @@ class StateManager:
         display_message: str,
         expires_minutes: int = 5,
     ) -> ConversationSession:
-        """Set a pending confirmation for a tool execution."""
-        session.pending_confirmation = {
+        """Set a pending confirmation for a tool execution with row-level locking."""
+        # Re-fetch session with FOR UPDATE lock
+        result = await self.db.execute(
+            select(ConversationSession)
+            .where(ConversationSession.session_id == session.session_id)
+            .with_for_update()
+        )
+        locked_session = result.scalar_one()
+
+        locked_session.pending_confirmation = {
             "toolName": tool_name,
             "toolParams": tool_params,
             "displayMessage": display_message,
             "expiresAt": (datetime.utcnow() + timedelta(minutes=expires_minutes)).isoformat(),
         }
-        logger.info(f"Session {session.session_id}: set pending confirmation for {tool_name}")
-        return session
+
+        await self.db.flush()  # Persist and release lock
+        logger.info(f"Session {locked_session.session_id}: set pending confirmation for {tool_name}")
+        return locked_session
 
     async def clear_pending_confirmation(
         self, session: ConversationSession
