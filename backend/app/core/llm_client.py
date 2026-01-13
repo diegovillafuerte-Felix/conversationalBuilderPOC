@@ -97,9 +97,10 @@ class LLMClient:
         openai_messages.extend(messages)
 
         # Build request kwargs
+        # Note: gpt-4o and newer models use max_completion_tokens instead of max_tokens
         request_kwargs = {
             "model": model,
-            "max_tokens": max_tokens,
+            "max_completion_tokens": max_tokens,
             "messages": openai_messages,
             "temperature": temperature,
         }

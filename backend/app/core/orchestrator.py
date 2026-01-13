@@ -811,10 +811,11 @@ class Orchestrator:
             })
 
             try:
+                # Don't pass tools - force LLM to respond with text, not more tool calls
                 continuation_response = await self.llm_client.complete_with_tool_results(
                     system_prompt=context.system_prompt,
                     messages=messages_with_tool_calls,
-                    tools=context.tools or [],
+                    tools=[],  # Empty to force text response
                     tool_results=service_tool_results,
                 )
                 chain_state.last_llm_response = continuation_response

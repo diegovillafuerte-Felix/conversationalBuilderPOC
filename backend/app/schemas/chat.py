@@ -60,7 +60,8 @@ class DebugInfo(BaseModel):
     processing_time_ms: Optional[int] = Field(None, description="Total processing time")
     enrichment_info: Optional[dict] = Field(None, description="Context enrichment state and errors")
     routing_path: List[dict] = Field(default_factory=list, description="Routing events during conversation")
-    recursion_depth: int = Field(default=0, description="Current recursion depth")
+    chain_iterations: int = Field(default=0, description="Number of routing chain iterations")
+    stable_state_reached: bool = Field(default=False, description="Whether chain reached stable state")
 
 
 class ChatMessageResponse(BaseModel):

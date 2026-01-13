@@ -27,8 +27,7 @@ Felix is a **conversational AI assistant** that helps users with financial servi
 - Sending money to family abroad (remittances)
 - Topping up mobile phones
 - Paying bills
-- Managing credit and loans
-- Checking wallet balances
+- Managing credit and loans (SNPL - Send Now Pay Later)
 
 Instead of clicking through menus, users simply chat naturally:
 
@@ -63,19 +62,22 @@ At its core, Felix is a **multi-agent system** where specialized AI agents colla
               │               │           │           │               │
               ▼               ▼           ▼           ▼               ▼
         ┌───────────┐  ┌───────────┐ ┌─────────┐ ┌─────────┐  ┌───────────┐
-        │Remittances│  │  Top-Ups  │ │Bill Pay │ │  Credit │  │  Wallet   │
-        │  Agent    │  │   Agent   │ │  Agent  │ │  Agent  │  │   Agent   │
-        │           │  │           │ │         │ │         │  │           │
-        │ "Send $   │  │ "Recharge │ │ "Pay    │ │ "Apply  │  │ "Check    │
-        │  abroad"  │  │  phones"  │ │ bills"  │ │ for a   │  │  balance" │
-        └───────────┘  └───────────┘ └─────────┘ │  loan"  │  └───────────┘
-                                                 └─────────┘
+        │Remittances│  │  Top-Ups  │ │Bill Pay │ │  SNPL   │  │ Financial │
+        │  Agent    │  │   Agent   │ │  Agent  │ │  Agent  │  │  Advisor  │
+        │           │  │           │ │         │ │         │  │  (Shadow) │
+        │ "Send $   │  │ "Recharge │ │ "Pay    │ │ "Apply  │  │           │
+        │  abroad"  │  │  phones"  │ │ bills"  │ │ for a   │  │ "Budget & │
+        └───────────┘  └───────────┘ └─────────┘ │  loan"  │  │  savings" │
+                                                 └─────────┘  └───────────┘
 ```
 
 **Each agent is a specialist:**
 - The main Felix agent is the "receptionist" who understands what you need
 - Specialized agents handle specific domains with deep expertise
 - Agents can hand off to each other seamlessly
+- Financial Advisor is a **shadow agent** that activates when users need budgeting/savings help
+
+> **Note:** Wallet functionality exists as a **service** (for balance checks, history) but not as a dedicated conversational agent. Wallet data is accessed by other agents as needed.
 
 ---
 
@@ -281,14 +283,22 @@ Agents are organized in a tree structure. This provides:
                     ├── Can escalate to human
                     └── Routes to specialists
                             │
-        ┌───────────────────┼───────────────────┐
-        │                   │                   │
-        ▼                   ▼                   ▼
-   Remittances          Top-Ups            Bill Pay
-   ├── 17 tools         ├── 8 tools        ├── 6 tools
-   ├── 3 subflows       ├── 1 subflow      ├── 1 subflow
-   └── Can go back      └── Can go back    └── Can go back
-       to Felix             to Felix            to Felix
+        ┌───────────────────┼───────────────────┬───────────────────┐
+        │                   │                   │                   │
+        ▼                   ▼                   ▼                   ▼
+   Remittances          Top-Ups            Bill Pay              SNPL
+   ├── 17 tools         ├── 8 tools        ├── 6 tools        ├── 12 tools
+   ├── 3 subflows       ├── 1 subflow      ├── 1 subflow      ├── 1 subflow
+   └── Can go back      └── Can go back    └── Can go back    └── Can go back
+       to Felix             to Felix            to Felix           to Felix
+
+                            │
+                            │ (Shadow Service)
+                            ▼
+                    Financial Advisor
+                    ├── Activates on financial wellness topics
+                    ├── 90% relevance threshold
+                    └── Can be pushed onto agent stack
 ```
 
 ### Example: Agent Navigation
@@ -298,10 +308,10 @@ User: "I want to send money"
 Felix: "I'll connect you with our remittances specialist."
        [Felix switches to Remittances Agent]
 
-User: "Actually, nevermind. What's my balance?"
+User: "Actually, nevermind. I want to apply for credit."
 Remittances: "No problem! Let me take you back to Felix
-              who can help with your wallet."
-             [Returns to Felix, then to Wallet Agent]
+              who can help with credit."
+             [Returns to Felix, then to SNPL Agent]
 ```
 
 ### Agent Configuration
@@ -544,9 +554,9 @@ Different subagents watch for different opportunities:
 ```
 ┌─────────────────┐     ┌─────────────────┐
 │ Financial       │     │ Campaigns       │
-│ Advisor         │     │ Agent           │
+│ Advisor         │     │ (DISABLED)      │
 │                 │     │                 │
-│ Watches for:    │     │ Watches for:    │
+│ Watches for:    │     │ Would watch for:│
 │ • Budgeting     │     │ • Promotions    │
 │   questions     │     │ • Seasonal      │
 │ • Savings       │     │   offers        │
@@ -556,8 +566,15 @@ Different subagents watch for different opportunities:
 │                 │     │                 │
 │ Threshold: 90%  │     │ Threshold: 70%  │
 │ relevance       │     │ relevance       │
+│                 │     │                 │
+│ ✅ ENABLED      │     │ ❌ DISABLED     │
+│ Has full agent  │     │ Config only     │
+│ (financial_     │     │ (no agent file) │
+│  advisor.json)  │     │                 │
 └─────────────────┘     └─────────────────┘
 ```
+
+> **Current Status:** Only the Financial Advisor subagent is enabled. The Campaigns subagent is configured but disabled (`enabled: false` in shadow_service.json).
 
 ### Activation vs. Tips
 
@@ -658,7 +675,7 @@ The agent stack works like browser history - you can go back:
 ```
 Start: [Felix]
 "I want to send money" → [Felix, Remittances]
-"Actually, check my balance" → [Felix, Remittances, Wallet]
+"Actually, I need credit" → [Felix, Remittances, SNPL]
 "Go back" → [Felix, Remittances]
 "Go home" → [Felix]
 ```
@@ -893,17 +910,19 @@ def get_exchange_rate(from_currency, to_currency):
 │  │                         REST API Routers                             │  │
 │  │  /api/v1/remittances/*  /api/v1/topups/*  /api/v1/snpl/*            │  │
 │  │  /api/v1/billpay/*      /api/v1/wallet/*  /api/v1/campaigns/*       │  │
+│  │  /api/v1/financial-data/*                                           │  │
 │  └─────────────────────────────────────────────────────────────────────┘  │
 │                                    │                                       │
 │                                    ▼                                       │
 │  ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌──────────┐│
-│  │Remittances │ │  Top-Ups   │ │  Bill Pay  │ │   Credit   │ │  Wallet  ││
-│  │  Service   │ │  Service   │ │  Service   │ │  (SNPL)    │ │  Service ││
+│  │Remittances │ │  Top-Ups   │ │  Bill Pay  │ │   SNPL     │ │ Wallet*  ││
+│  │  Service   │ │  Service   │ │  Service   │ │  Service   │ │ Service  ││
 │  │            │ │            │ │            │ │            │ │          ││
 │  │ • Transfers│ │ • Recharges│ │ • Payments │ │ • Loans    │ │ • Balance││
 │  │ • Recipients│ │ • Carriers │ │ • Billers  │ │ • Payments │ │ • History││
 │  │ • Rates    │ │ • Promos   │ │ • Schedules│ │ • Status   │ │ • Cards  ││
 │  └────────────┘ └────────────┘ └────────────┘ └────────────┘ └──────────┘│
+│  * Wallet is a service only (no dedicated agent - accessed by other agents) │
 │                                                                            │
 │  Response Format: {"success": true, "data": {...}}                        │
 │                   {"success": false, "error": "...", "error_code": "..."}  │
@@ -959,9 +978,10 @@ conversationalBuilderPOC/
 │   │   │   └── admin.py             # Admin CRUD
 │   │   │
 │   │   ├── config/                  # JSON configurations (English only)
-│   │   │   ├── agents/              # Agent definitions
-│   │   │   ├── prompts/             # System prompts
-│   │   │   └── shadow_service.json  # Shadow service config
+│   │   │   ├── agents/              # Agent definitions (felix, remittances, topups, snpl, billpay, financial_advisor)
+│   │   │   ├── prompts/             # System prompts (base_system.json, sections.json)
+│   │   │   ├── shadow_service.json  # Shadow service config
+│   │   │   └── confirmation_templates.json  # Financial transaction confirmations
 │   │   │
 │   │   └── main.py                  # FastAPI entry point
 │   │
@@ -970,20 +990,24 @@ conversationalBuilderPOC/
 ├── services/                        # Independently deployable (Port 8001)
 │   ├── app/
 │   │   ├── main.py                  # FastAPI entry point
+│   │   ├── config.py                # Services gateway configuration
 │   │   ├── routers/                 # REST API routers
 │   │   │   ├── remittances.py       # /api/v1/remittances/*
 │   │   │   ├── topups.py            # /api/v1/topups/*
 │   │   │   ├── snpl.py              # /api/v1/snpl/*
 │   │   │   ├── billpay.py           # /api/v1/billpay/*
 │   │   │   ├── wallet.py            # /api/v1/wallet/*
-│   │   │   └── campaigns.py         # /api/v1/campaigns/*
+│   │   │   ├── campaigns.py         # /api/v1/campaigns/*
+│   │   │   └── financial_data.py    # /api/v1/financial-data/*
 │   │   │
 │   │   └── services/                # Mock service implementations
 │   │       ├── remittances.py
 │   │       ├── topups.py
 │   │       ├── snpl.py
 │   │       ├── billpay.py
-│   │       └── wallet.py
+│   │       ├── wallet.py
+│   │       ├── campaigns.py
+│   │       └── financial_data.py
 │   │
 │   └── tests/                       # Services Gateway tests
 │
@@ -1011,7 +1035,20 @@ conversationalBuilderPOC/
 | HTTP client for services | `backend/app/clients/service_client.py` |
 | Tool → endpoint mapping | `backend/app/clients/service_mapping.py` |
 | Agent configurations | `backend/app/config/agents/*.json` |
+| Confirmation templates | `backend/app/config/confirmation_templates.json` |
+| Shadow service config | `backend/app/config/shadow_service.json` |
 | Services Gateway entry | `services/app/main.py` |
+
+### Current Agent Configurations
+
+| Agent | File | Description |
+|-------|------|-------------|
+| Felix | `felix.json` | Root orchestrator - routes to specialists |
+| Remittances | `remittances.json` | International money transfers (17 tools, 3 subflows) |
+| Top-Ups | `topups.json` | Mobile phone recharges (8 tools, 1 subflow) |
+| Bill Pay | `billpay.json` | Bill payments (6 tools, 1 subflow) |
+| SNPL | `snpl.json` | Send Now Pay Later credit (12 tools, 1 subflow) |
+| Financial Advisor | `financial_advisor.json` | Shadow agent for budgeting/savings |
 
 ---
 
@@ -1070,8 +1107,8 @@ StateManager.get_or_create_session()
 ContextAssembler builds system prompt:
 ├── Base system prompt (English)
 ├── Felix agent description
-├── Felix's tools: [enter_remittances, enter_credit, enter_wallet,
-│                   enter_topups, enter_billpay, change_language]
+├── Felix's tools: [enter_remittances, enter_credit,
+│                   enter_topups, change_language]
 ├── User profile: "Carlos Martinez, Spanish speaker"
 ├── Conversation history: (empty - first message)
 └── Language directive: "Respond in Spanish"
@@ -2118,3 +2155,5 @@ The result is a conversational AI system that's:
 ---
 
 *This document describes the Felix Conversational Orchestrator architecture as of January 2026.*
+
+*Last updated: January 12, 2026 - Updated agent hierarchy (removed Wallet/Credit agents, added Financial Advisor), clarified shadow service status (Campaigns disabled), added services gateway details.*

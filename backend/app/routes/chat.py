@@ -72,7 +72,8 @@ async def send_message(
                 processing_time_ms=response.debug.processing_time_ms,
                 enrichment_info=response.debug.enrichment_info,
                 routing_path=response.debug.routing_path,
-                recursion_depth=response.debug.recursion_depth,
+                chain_iterations=response.debug.chain_iterations,
+                stable_state_reached=response.debug.stable_state_reached,
             )
 
         # Map shadow messages to schema
