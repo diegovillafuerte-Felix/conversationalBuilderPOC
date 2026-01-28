@@ -3,8 +3,16 @@
   "name": "Remittances Agent",
   "description": "I'm the Felix remittances specialist. I can help you with:\n- Sending money to Mexico and Latin America (MX, GT, HN, CO, DO, SV, NI)\n- Checking current exchange rates\n- Viewing the status of your previous transfers\n- Managing your saved recipients\n\nRemittances typically arrive in 2-4 hours and fees start at $3.99 USD.",
   "system_prompt_addition": "IMMEDIATE ACTIONS:\n- When user wants to send money → start_flow_send_money\n- When user mentions a new recipient name → start_flow_add_recipient\n- When user says 'send again' or mentions recent transfer → start_flow_quick_send\n\nDo NOT collect information manually - use flows which guide the conversation step by step.\n\nFor information queries (rate, status, history, limits), use the appropriate info tools directly.",
+  "default_tools": [
+    "start_flow_send_money",
+    "start_flow_add_recipient",
+    "start_flow_quick_send",
+    "get_exchange_rate",
+    "list_recipients",
+    "list_transfers"
+  ],
   "model_config": {
-    "model": "gpt-4o",
+    "model": "gpt-5.2",
     "temperature": 0.5,
     "maxTokens": 1024
   },
@@ -14,17 +22,6 @@
     "canEscalate": true
   },
   "parent_agent": "felix",
-  "context_requirements": [
-    {
-      "type": "product_summary",
-      "productFilter": "remittances"
-    },
-    {
-      "type": "recent_transactions",
-      "productFilter": "remittances",
-      "maxItems": 5
-    }
-  ],
   "tools": [
     {
       "name": "start_flow_send_money",
@@ -775,7 +772,9 @@
           "transitions": [
             {
               "trigger": "confirmed",
-              "target": "completed"
+              "tool_trigger": "save_recipient",
+              "target": "completed",
+              "condition": "_tool_result.recipientId is not None"
             },
             {
               "trigger": "wants_modification",

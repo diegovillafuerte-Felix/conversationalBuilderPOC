@@ -1,4 +1,4 @@
-# Felix Conversational Orchestrator - Codebase Overview
+# Conversational Orchestrator Service (COS) - Codebase Overview
 
 ---
 ## Instructions for Claude
@@ -17,7 +17,7 @@ Update this CLAUDE.md to reflect those changes before finishing the task.
 
 ## Project Overview
 
-Felix is a multi-agent conversational AI system for handling financial services (remittances, credit, top-ups, bill payments, wallet) through natural language. It uses a hierarchical agent architecture where a main orchestrator routes conversations to specialized product agents, each with their own tools, subflows, and response templates. The system supports stateful multi-step flows, confirmation handling, and escalation to human agents.
+COS (Conversational Orchestrator Service) is a multi-agent conversational AI system for handling financial services (remittances, credit, top-ups, bill payments, wallet) through natural language. It uses a hierarchical agent architecture where a main orchestrator routes conversations to specialized product agents, each with their own tools, subflows, and response templates. The system supports stateful multi-step flows, confirmation handling, and escalation to human agents.
 
 ## Architecture
 
@@ -25,17 +25,20 @@ The system follows a **layered architecture** with clear separation of concerns:
 
 1. **API Layer** (`backend/routes/`) - FastAPI endpoints handling HTTP requests
 2. **Orchestration Layer** (`backend/core/`) - Conversation flow management and LLM interaction
-3. **Data Layer** (`backend/models/`) - SQLAlchemy ORM models with PostgreSQL
-4. **Services Gateway** (`services/`) - **Independently deployable** mock backend services via REST API
-5. **Configuration Layer** (`backend/config/`) - JSON-based agent/tool/prompt configurations
+3. **Configuration Layer** (`backend/core/`) - In-memory agent/tool/subflow configuration via `AgentRegistry`
+4. **Data Layer** (`backend/models/`) - SQLAlchemy ORM models for sessions, messages, users (PostgreSQL)
+5. **Services Gateway** (`services/`) - **Independently deployable** mock backend services via REST API
+6. **JSON Configs** (`backend/config/`) - Source of truth for agent definitions
 
 **Key patterns:**
 - **Agent hierarchy**: Root orchestrator with child product agents
+- **Agent isolation**: Each agent is ignorant of others; can only interact via assigned tools
+- **Team ownership**: Product teams own their agent configs (JSON) and services; Platform team owns orchestration
 - **State machine flows**: Multi-step processes with defined states and transitions
 - **Tool-based actions**: Agents invoke tools that call services via HTTP
 - **Explicit routing**: Validated routing system with startup checks (no string parsing inference)
 - **Context assembly**: Dynamic prompt construction based on user, session, and agent state
-- **Shadow service**: Parallel evaluation system for contextual tips and promotions
+- **Service-presentation separation**: Services return raw data only; LLM/templates handle formatting
 - **Service separation**: Services deployed independently, communicate via REST API
 
 ## Directory Structure
@@ -49,36 +52,44 @@ conversationalBuilderPOC/
 │   │   │   ├── context_assembler.py # Builds LLM prompts
 │   │   │   ├── state_manager.py     # Session/flow state
 │   │   │   ├── tool_executor.py     # Runs tools via HTTP to services gateway
+│   │   │   ├── config_types.py      # Dataclasses for agent/tool/subflow configs
+│   │   │   ├── agent_registry.py    # In-memory config registry (singleton)
 │   │   │   ├── routing.py           # Routing types and data classes
-│   │   │   ├── routing_registry.py  # Startup validation and routing cache
 │   │   │   ├── routing_handler.py   # Unified routing execution
+│   │   │   ├── context_enrichment.py # Condition evaluation utilities
 │   │   │   ├── llm_client.py        # OpenAI API wrapper
 │   │   │   ├── history_compactor.py # Conversation summarization
 │   │   │   ├── config_loader.py     # Loads JSON configs
-│   │   │   ├── i18n.py              # Localization
+│   │   │   ├── i18n.py              # Language directive injection
 │   │   │   ├── template_renderer.py # Response templating
-│   │   │   ├── shadow_service.py    # Shadow service orchestrator
-│   │   │   └── shadow_subagent.py   # Shadow subagent base class
+│   │   │   └── event_trace.py       # Event tracing for debugging
 │   │   ├── clients/           # HTTP clients for external services
 │   │   │   ├── service_client.py    # Async HTTP client for services gateway
 │   │   │   └── service_mapping.py   # Tool name → endpoint mapping
-│   │   ├── models/            # SQLAlchemy ORM models
-│   │   │   ├── agent.py       # Agent, Tool, ResponseTemplate
+│   │   ├── services/          # Mock service implementations (same as services gateway)
+│   │   │   ├── remittances.py       # Remittances mock service
+│   │   │   ├── snpl.py              # SNPL/credit mock service
+│   │   │   ├── topups.py            # Top-ups mock service
+│   │   │   ├── billpay.py           # Bill pay mock service
+│   │   │   ├── wallet.py            # Wallet mock service
+│   │   │   ├── financial_data.py    # Financial data mock service
+│   │   │   └── campaigns.py         # Campaigns mock service
+│   │   ├── models/            # SQLAlchemy ORM models (session/user data only)
 │   │   │   ├── session.py     # ConversationSession
-│   │   │   ├── conversation.py # ConversationMessage
-│   │   │   ├── subflow.py     # Subflow, SubflowState
+│   │   │   ├── conversation.py # ConversationMessage, ConversationHistoryCompacted
 │   │   │   └── user.py        # UserContext
 │   │   ├── routes/            # FastAPI routers
 │   │   │   ├── chat.py        # Chat API endpoints
 │   │   │   └── admin.py       # Admin CRUD endpoints
 │   │   ├── schemas/           # Pydantic request/response models
 │   │   ├── config/            # JSON configurations
-│   │   │   ├── agents/        # Agent definitions (English-only)
-│   │   │   ├── prompts/       # System prompt templates (English-only)
+│   │   │   ├── agents/        # Agent definitions (owned by product teams)
+│   │   │   │   # felix.json (Platform), remittances.json (Chat team),
+│   │   │   │   # topups.json (New Products), snpl.json (Credit team), etc.
+│   │   │   ├── prompts/       # System prompt templates (Platform team)
 │   │   │   ├── sample_data/   # Sample data for seeding
-│   │   │   ├── shadow_service.json  # Shadow service configuration
 │   │   │   └── confirmation_templates.json  # Financial transaction confirmations
-│   │   ├── seed/              # Database seeders
+│   │   ├── seed/              # Database seeders (users only - agents loaded from JSON)
 │   │   └── main.py            # FastAPI app entry point
 │   └── requirements.txt
 ├── services/                  # Independently deployable services gateway
@@ -109,7 +120,22 @@ conversationalBuilderPOC/
 ├── frontend/
 │   ├── chat/                  # Simple vanilla JS chat UI
 │   ├── admin/                 # Simple vanilla JS admin UI
-│   └── react-app/             # React-based UI (in development)
+│   └── react-app/             # React-based UI
+│       ├── src/components/
+│       │   ├── chat/          # Chat interface components
+│       │   │   ├── ChatContainer.jsx, ChatHeader.jsx, ChatInput.jsx
+│       │   │   ├── MessageList.jsx, Message.jsx, TypingIndicator.jsx
+│       │   │   ├── ConfirmationButtons.jsx, SessionInfo.jsx
+│       │   │   ├── DebugPanel.jsx, EventTracePanel.jsx
+│       │   │   └── UserSidebar.jsx
+│       │   ├── visualize/     # Agent/flow visualization
+│       │   │   ├── VisualizePage.jsx, HierarchyDiagram.jsx
+│       │   │   ├── StateMachineDiagram.jsx, ToolCatalog.jsx
+│       │   │   └── nodes/ (AgentNode.jsx, StateNode.jsx)
+│       │   └── admin/         # Admin layout (simplified)
+│       ├── src/pages/         # ChatPage.jsx, AdminPage.jsx
+│       ├── src/store/         # Zustand stores (chatStore, visualizeStore)
+│       └── src/services/      # API clients (chatApi, adminApi)
 └── docker-compose.yml         # PostgreSQL + Redis + Backend + Services Gateway
 ```
 
@@ -130,31 +156,23 @@ conversationalBuilderPOC/
 User Request
      │
      ▼
-[routes/chat.py] ──► [Orchestrator] (Three-Phase Flow)
+[routes/chat.py] ──► [Orchestrator] (Routing Chain Flow)
                            │
                     PHASE 1: SETUP
                            │
                            ├──► [StateManager] (load/create session, get agent)
                            │
-                    PHASE 2: CONTEXT ENRICHMENT
+                    PHASE 2: ROUTING CHAIN
                            │
-                           ├──► [ContextEnrichment] ──► [ToolExecutor] (execute on_enter tools)
-                           │         │
-                           │         └──► Stores enriched data in session.current_flow.stateData
+                           ├──► [ContextAssembler] (builds prompt)
                            │
-                    PHASE 3: LLM GENERATION
-                           │
-                           ├──► [ContextAssembler] (builds prompt with enriched data)
-                           │
-                           ├──► [LLMClient] ────────┐
-                           │                        │  (parallel execution)
-                           ├──► [ShadowService] ────┘
+                           ├──► [LLMClient] (call model)
                            │
                     TOOL EXECUTION (from LLM response)
                            │
-                           ├──► [RoutingHandler] ──► [RoutingRegistry] (validated routing)
+                           ├──► [RoutingHandler] ──► [AgentRegistry] (validated routing)
                            │         │
-                           │         └──► Returns state_changed flag (no recursion)
+                           │         └──► Returns state_changed flag
                            │
                            ├──► [ToolExecutor] ──► [ServiceClient] ──► Services Gateway (HTTP)
                            │                              │
@@ -164,40 +182,29 @@ User Request
                            │                              ▼
                            │                      [services/app/services/*]
                            │
-                           └──► Response with enriched data in context
+                           └──► Loop until stable state (no routing)
 ```
 
-**Data flow (Three-Phase Architecture):**
+**Data flow:**
 
 **Phase 1: Setup**
 1. Request arrives at `routes/chat.py`
 2. `Orchestrator` loads session via `StateManager`
 3. Current agent loaded with tools, subflows, and response templates
 
-**Phase 2: Context Enrichment** (NEW - Jan 2026)
-4. `ContextEnrichment` checks if enrichment needed (first message in flow state)
-5. Executes `on_enter.callTool` actions automatically
-6. Fetches context requirements (frequent numbers, user limits, etc.)
-7. Stores enriched data in `session.current_flow.stateData`
+**Phase 2: Routing Chain**
+4. `ContextAssembler` builds prompt with current agent/flow context
+5. `LLMClient` calls the model
+6. Tools executed from LLM response:
+   - **Routing tools** (enter_*, start_flow_*, navigation): `RoutingHandler` handles, may trigger chain continuation
+   - **Service tools**: `ToolExecutor` calls `ServiceClient` which makes HTTP requests to Services Gateway
+7. If state changed, loop back to step 4 with new agent context
+8. When stable (no routing), return response to user
 
-**Phase 3: LLM Generation**
-8. `ContextAssembler` builds prompt including enriched data in "Available Context Data" section
-9. `LLMClient` and `ShadowService` run **in parallel**
-10. `ShadowService` evaluates all enabled subagents (financial advisor, campaigns)
-
-**Tool Execution:**
-11. **For routing tools** (enter_*, start_flow_*, navigation): `RoutingHandler` executes via validated registry
-    - Returns `state_changed=True/False` (NO recursion - enrichment happens on next message)
-12. **For service tools**: `ToolExecutor` calls `ServiceClient` which makes HTTP requests to Services Gateway
-13. Services Gateway routes to appropriate service and returns JSON response
-14. If shadow activation detected, user is routed to the relevant agent (flow preserved)
-15. Response returned with main message + optional shadow messages
-
-**Key Improvements (Jan 2026):**
-- ✅ **No recursion:** State changes trigger enrichment on next message, not immediate recursion
-- ✅ **Proactive data loading:** Frequent numbers, etc. loaded automatically when entering flow states
+**Key Design Decisions:**
+- ✅ **No recursion:** Routing chain iterates until stable state
 - ✅ **LLM-only formatting:** Services return raw data, LLM handles ALL user-facing formatting
-- ✅ **Predictable flow:** Clear three-phase execution prevents "frozen" responses
+- ✅ **Simple flow:** LLM explicitly calls tools to fetch data when needed
 
 ## Conventions
 
@@ -221,7 +228,7 @@ User Request
 
 ## Current State
 
-**Implemented:** Multi-agent orchestration, all product agents (remittances, credit, topups, billpay, wallet), tool execution with mock backends, stateful subflows, confirmation handling, history compaction, debug panel, i18n (es/en), vanilla JS + React UIs, admin CRUD API, shadow service with parallel contextual messaging.
+**Implemented:** Multi-agent orchestration, all product agents (remittances, credit, topups, billpay, wallet), tool execution with mock backends, stateful subflows, confirmation handling, history compaction, debug panel, i18n (es/en), vanilla JS + React UIs, admin CRUD API.
 
 **Remittances Agent (Full Implementation):**
 - Supports 7 countries: MX, GT, HN, CO, DO, SV, NI
@@ -231,45 +238,31 @@ User Request
 - KYC-based limits with 3 levels
 - Response templates for success/error scenarios
 
-**Shadow Service (New):**
-- Runs in parallel with main agent (no added latency)
-- Two initial subagents: Financial Advisor (90% threshold) and Campaigns (70% threshold)
-- Each subagent can inject contextual tips or "take over" the conversation
-- Flow state preserved when shadow agent takes over - user returns to exact step
-- Configurable via `config/shadow_service.json` (thresholds, tone, campaigns)
-- Cooldown tracking to avoid tip fatigue
-- Full Financial Advisor agent for deeper engagement when user shows interest
-
 **Routing System:**
-- Explicit routing via `routing` field in Tool model (no string parsing inference)
-- `RoutingRegistry` validates all routing targets exist at startup (fail-fast)
+- Explicit routing via `routing` field in ToolConfig (no string parsing inference)
+- `AgentRegistry` validates all routing targets exist at startup (fail-fast)
 - `RoutingHandler` provides unified execution for: enter_agent, start_flow, navigation
 - Supports cross-agent flows via `cross_agent` field (e.g., SNPL → remittances flow)
-- Agent and Subflow models have `config_id` for stable identifier lookups
+- AgentConfig and SubflowConfig use `config_id` for stable identifier lookups
 - Tool configs can use `routing` (explicit) or `starts_flow` (legacy) fields
 - Invalid routing configs prevent application startup with clear error messages
 
-**Routing & Context Enrichment Refactor (Completed Jan 2026):**
-- **Three-phase flow**: Setup → Context Enrichment → LLM Generation (no recursion)
-- **Context enrichment**: Automatic execution of `on_enter.callTool` actions when entering flow states
-- **Proactive data loading**: Frequent numbers, user limits, etc. loaded before LLM call
-- **State tracking**: `state_changed` flag replaces `should_recurse` (no more recursion bugs)
-- **Enriched data visibility**: Data shown in "Available Context Data" section of LLM prompt
-- **Removed recursion**: Only shadow takeover can recurse (intentional); routing never recurses
-- **Template cleanup**: Removed 8 success response templates; LLM handles all formatting
-- **Benefits**: Predictable flow, no "frozen" responses, proactive data presentation
-- **Files modified**: orchestrator.py, routing_handler.py, context_enrichment.py (new), 4 agent configs
+**Declarative State Transitions:**
+- **State-level transitions**: The `transitions` list in SubflowStateConfig is evaluated after service tool execution
+- **tool_trigger field**: Explicit mapping from tool name to transition (e.g., `"tool_trigger": "detect_carrier"`)
+- **Condition evaluation**: Supports `key is not None`, `key in stateData`, `key == 'value'`, nested paths (`_tool_result.carrier`)
+- **First match wins**: Transitions are evaluated in config order
+- **Automatic state change**: When a transition matches, the system transitions to the target state and signals chain continuation
+- **Tool result storage**: Tool results are stored in stateData as `_result_{tool_name}` for condition evaluation
+- **Condition utilities**: `context_enrichment.py` provides `evaluate_condition()` for declarative transition evaluation
 
-**Service-Presentation Separation (Completed Jan 2026):**
+**Service-Presentation Separation:**
 - **Clean architectural boundary**: Service layer returns ONLY raw data, presentation layer handles ALL formatting
-- **Service layer cleanup**: Removed 73 `_message` fields across all services (remittances: 31, snpl: 29, topups: 7, wallet: 3, billpay: 2)
-- **Removed architectural backdoor**: Orchestrator no longer checks `result.data.get("_message")` - forces proper formatting channels
 - **Benefits**: Services are now UI-agnostic and can be used by chat, web app, mobile app, or direct API calls
 - **Team independence**: Backend/service team can work independently from conversational/frontend team
 - **Formatting options**: Response templates (preferred for consistency) or LLM formatting (preferred for dynamic content)
-- **All unit tests pass**: 68/68 service tests pass after refactoring
 
-**Services Gateway (Completed Jan 2026):**
+**Services Gateway:**
 - **Independent deployment**: Services run in separate Docker container (port 8001)
 - **REST API**: All services exposed via `/api/v1/{service}/*` endpoints
 - **7 service modules**: remittances, snpl, topups, billpay, wallet, financial_data, campaigns
@@ -280,18 +273,62 @@ User Request
 - **Response format**: `{"success": true, "data": {...}}` or `{"success": false, "error": "...", "error_code": "..."}`
 - **Benefits**: Teams can work independently, services can scale separately, easy to swap mock for real
 
-**i18n Simplification (Completed Jan 2026):**
+**i18n Simplification:**
 - **English-only configs**: All JSON configs (agents, prompts, tools) now use plain English strings
 - **Removed localization layer**: Deleted `get_localized()`, `get_message()`, `get_prompt_section()`, `get_base_system_prompt()` from i18n.py
-- **Deleted `services.json`**: 43 unused bilingual message templates removed
-- **Simplified context_assembler.py**: Removed 23 `get_localized()` calls, reads configs directly
-- **Simplified seed/agents.py**: Removed 30+ `get_localized()` calls
-- **Service layer cleanup**: Removed `_get_localized()` method from remittances service
 - **Confirmation templates**: New centralized `confirmation_templates.json` with enable/disable toggle per template
 - **Only language code remaining**: `get_language_directive()` in i18n.py - injects user's language preference at end of every system prompt
 - **Benefits**: Simpler codebase, better LLM performance with English instructions, no dead bilingual code
 
-**Planned:** Shadow service admin UI, visual flow editor, analytics dashboard, WhatsApp integration, real backend services, auth, rate limiting.
+**JSON-Only Agent Configuration:**
+- **Removed SQLAlchemy models**: Deleted `models/agent.py` (Agent, Tool, ResponseTemplate) and `models/subflow.py` (Subflow, SubflowState)
+- **New dataclasses**: `config_types.py` defines AgentConfig, ToolConfig, SubflowConfig, SubflowStateConfig, ResponseTemplateConfig
+- **In-memory registry**: `AgentRegistry` singleton loads all agent configs from JSON at startup
+- **Synchronous lookups**: Agent/tool/subflow lookups no longer require async DB queries
+- **Startup validation**: Registry validates all routing targets exist (agents, subflows) - fail-fast on invalid configs
+- **Hot reload**: Admin endpoint `/api/admin/agents/reload` reinitializes registry without DB sync
+- **Benefits**: Faster lookups (no DB roundtrips), simpler code (no ORM mapping), easier testing (no DB fixtures for agent configs)
+
+**Event Tracing:**
+- Debug system for tracking routing, tool calls, and orchestration flow
+- `EventTracer` class captures events during message processing
+- Categories: session, agent, flow, routing, LLM, tool, service, error
+- `EventTracePanel.jsx` component displays trace events in React UI
+- Helps diagnose routing issues and understand conversation flow
+
+**Visualization System:**
+- `VisualizePage.jsx` - Main visualization interface
+- `HierarchyDiagram.jsx` - Agent hierarchy visualization
+- `StateMachineDiagram.jsx` - Subflow state machine visualization
+- `ToolCatalog.jsx` - Browsable tool catalog
+- Uses React Flow for interactive diagrams
+- `visualizeStore.js` - Zustand store for visualization state
+
+**Simplification (Jan 2026):**
+- **Removed Shadow Service**: Deleted `shadow_service.py`, `shadow_subagent.py`, `shadow_service.json`, and related endpoints
+- **Simplified Context Enrichment**: Reduced from ~510 lines to ~75 lines. Now only provides `evaluate_condition()` for declarative transitions
+- **Removed proactive data fetching**: LLM now explicitly calls tools when it needs data (via `agent_instructions`)
+- **Removed `context_requirements`**: Agents no longer have automatic data loading - tools are called explicitly
+- **Benefits**: ~50% reduction in core orchestration code, simpler mental model, predictable flow
+
+**Prompt Architecture Optimization (Jan 2026):**
+- **Prompt Modes**: `ContextAssembler` now supports `mode: PromptMode` parameter with two modes:
+  - `FULL` (default): Full context with all sections (base prompt, agent desc, user profile, product context, history, flow state, navigation, language)
+  - `ROUTING`: Minimal context for routing decisions (~500 tokens vs ~3000 for FULL). Used for chain iterations after routing occurs.
+- **PromptMode enum**: Added to `config_types.py` with `FULL` and `ROUTING` values
+- **`_build_routing_context()`**: New method builds minimal prompt with only routing tools and brief system prompt
+- **`_build_routing_tools()`**: New method extracts only tools with routing config (enter_agent, start_flow, navigation)
+- **Orchestrator integration**: After first routing iteration, subsequent iterations use ROUTING mode automatically
+- **Token savings**: ~80% reduction for routing chain iterations (from ~3000 to ~500 tokens)
+
+**Default Tools Whitelist:**
+- **`default_tools` field**: New optional field in AgentConfig for tool whitelisting when not in a flow
+- **Tool selection priority**: 1) Flow state_tools → 2) Agent default_tools → 3) All agent tools
+- **Configured agents**: remittances.json (6 default tools), snpl.json (6 default tools)
+- **Token savings**: ~70% tool token reduction for agents with many tools (19 → 6 + navigation)
+- **Backward compatible**: Agents without `default_tools` continue to expose all tools
+
+**Planned:** Analytics dashboard, WhatsApp integration, real backend services, auth, rate limiting.
 
 ## Running Tests
 

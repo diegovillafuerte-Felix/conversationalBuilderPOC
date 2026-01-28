@@ -3,8 +3,16 @@
   "name": "Send Now Pay Later",
   "description": "I'm the SNPL specialist. I can help you with:\n- Checking if you qualify for credit\n- Applying for $200-$1000 to send remittances\n- Making payments on your loans\n- Viewing your loan status and payment schedule\n\nWith SNPL, you can send money to your loved ones now and pay over 4-26 weeks.",
   "system_prompt_addition": "IMPORTANT - FLOW TRIGGERS:\n- When user wants to APPLY for SNPL or get credit: use 'start_flow_apply_snpl'\n- When user wants to MAKE A PAYMENT on their loan: use 'start_flow_pay_snpl'\n- When user wants to USE their approved credit to send money: use 'start_flow_use_snpl'\n\nDo NOT manually collect amounts, terms, or other details - the flows handle all data collection.\n\nFor informational queries (eligibility check, loan status, payment history), use the appropriate info tools directly.",
+  "default_tools": [
+    "start_flow_apply_snpl",
+    "start_flow_pay_snpl",
+    "start_flow_use_snpl",
+    "get_snpl_eligibility",
+    "get_snpl_overview",
+    "list_loans"
+  ],
   "model_config": {
-    "model": "gpt-4o",
+    "model": "gpt-5.2",
     "temperature": 0.5,
     "maxTokens": 1024
   },
@@ -14,12 +22,6 @@
     "canEscalate": true
   },
   "parent_agent": "felix",
-  "context_requirements": [
-    {
-      "type": "product_summary",
-      "productFilter": "snpl"
-    }
-  ],
   "tools": [
     {
       "name": "start_flow_apply_snpl",
@@ -292,11 +294,13 @@
           "transitions": [
             {
               "trigger": "eligible",
+              "tool_trigger": "get_snpl_eligibility",
               "target": "select_amount",
-              "condition": "eligibility.eligible == true"
+              "condition": "_tool_result.eligible"
             },
             {
               "trigger": "not_eligible",
+              "tool_trigger": "get_snpl_eligibility",
               "target": "rejected"
             }
           ],

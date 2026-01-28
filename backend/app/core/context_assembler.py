@@ -7,12 +7,11 @@ from dataclasses import dataclass
 import tiktoken
 
 from app.config import get_settings
-from app.models.agent import Agent, Tool
 from app.models.session import ConversationSession
 from app.models.user import UserContext
 from app.models.conversation import ConversationMessage
-from app.models.subflow import Subflow, SubflowState
 from app.core.config_loader import load_prompts
+from app.core.config_types import AgentConfig, ToolConfig, SubflowStateConfig, PromptMode
 from app.core.i18n import (
     get_language_directive,
     DEFAULT_LANGUAGE,
@@ -71,11 +70,12 @@ class ContextAssembler:
         self,
         session: ConversationSession,
         user_message: str,
-        agent: Agent,
+        agent: AgentConfig,
         user_context: Optional[UserContext] = None,
         recent_messages: Optional[List[ConversationMessage]] = None,
         compacted_history: Optional[str] = None,
-        current_flow_state: Optional[SubflowState] = None,
+        current_flow_state: Optional[SubflowStateConfig] = None,
+        mode: PromptMode = PromptMode.FULL,
     ) -> AssembledContext:
         """
         Assemble the full context for an LLM call.
@@ -88,16 +88,21 @@ class ContextAssembler:
             recent_messages: Recent messages for context
             compacted_history: Summarized older history
             current_flow_state: Current state if in a subflow
+            mode: Context assembly mode (FULL or ROUTING)
 
         Returns:
             AssembledContext with system prompt, messages, tools, and config
         """
-        token_counts = {}
-
         # Determine user's language preference
         language = DEFAULT_LANGUAGE
         if user_context:
             language = user_context.get_language()
+
+        # ROUTING mode: minimal context for routing decisions
+        if mode == PromptMode.ROUTING:
+            return self._build_routing_context(agent, user_message, language)
+
+        token_counts = {}
 
         # 1. Build system prompt sections
         sections = []
@@ -152,14 +157,6 @@ class ContextAssembler:
             sections.append(state_section)
             token_counts["flow_state"] = count_tokens(state_section)
 
-        # Agent-enriched data (if not in a flow) - always in English
-        if not session.current_flow and session.session_metadata:
-            agent_data = session.session_metadata.get("agent_enriched_data")
-            if agent_data:
-                agent_data_section = self._format_agent_enriched_data(agent_data)
-                sections.append(agent_data_section)
-                token_counts["agent_enriched_data"] = count_tokens(agent_data_section)
-
         # Pending confirmation - always in English
         if session.pending_confirmation:
             confirm_section = self._build_confirmation_section(session)
@@ -203,10 +200,10 @@ class ContextAssembler:
         token_counts["tools"] = count_tokens(str(tools))
 
         # 4. Get model config
-        model_config = agent.model_config_json or {}
-        model = model_config.get("model", settings.default_model)
-        temperature = model_config.get("temperature", settings.default_temperature)
-        max_tokens = model_config.get("maxTokens", settings.default_max_tokens)
+        model_cfg = agent.model_config or {}
+        model = model_cfg.get("model", settings.default_model)
+        temperature = model_cfg.get("temperature", settings.default_temperature)
+        max_tokens = model_cfg.get("maxTokens", settings.default_max_tokens)
 
         return AssembledContext(
             system_prompt=system_prompt,
@@ -218,36 +215,20 @@ class ContextAssembler:
             token_counts=token_counts,
         )
 
-    def _build_agent_section(self, agent: Agent) -> str:
+    def _build_agent_section(self, agent: AgentConfig) -> str:
         """Build the agent role section."""
         prompts = load_prompts()
         role_template = prompts.get("sections", {}).get(
             "your_current_role", "\n## Your Current Role\n{description}"
         )
 
-        # Get agent description - now a plain string
+        # Get agent description from config
         description = agent.description
-        if agent.config_json and "description" in agent.config_json:
-            desc = agent.config_json["description"]
-            # Handle both plain string and legacy dict format during transition
-            if isinstance(desc, str):
-                description = desc
-            elif isinstance(desc, dict):
-                description = desc.get("en", description)
-
         section = role_template.format(description=description)
 
         # Add system prompt addition
         if agent.system_prompt_addition:
-            addition = agent.system_prompt_addition
-            if agent.config_json and "system_prompt_addition" in agent.config_json:
-                spa = agent.config_json["system_prompt_addition"]
-                # Handle both plain string and legacy dict format during transition
-                if isinstance(spa, str):
-                    addition = spa
-                elif isinstance(spa, dict):
-                    addition = spa.get("en", addition)
-            section += f"\n\n{addition}"
+            section += f"\n\n{agent.system_prompt_addition}"
 
         return section
 
@@ -272,7 +253,7 @@ class ContextAssembler:
         return "\n".join(sections)
 
     def _build_product_context(
-        self, user_context: UserContext, agent: Agent
+        self, user_context: UserContext, agent: AgentConfig
     ) -> Optional[str]:
         """Build product-specific context based on the agent."""
         if not user_context.product_summaries:
@@ -348,7 +329,7 @@ class ContextAssembler:
         return "\n".join(lines) if lines else str(summary)
 
     def _build_flow_state_section(
-        self, session: ConversationSession, state: SubflowState
+        self, session: ConversationSession, state: SubflowStateConfig
     ) -> str:
         """Build the current flow state section."""
         flow = session.current_flow or {}
@@ -359,68 +340,14 @@ class ContextAssembler:
             "\n## Current Flow State\nFlow: {flow_id}\nState: {state_id}\n\n### Instructions for this state:\n{instructions}"
         )
 
-        # Get instructions - now a plain string
+        # Get instructions from config
         instructions = state.agent_instructions
-        if hasattr(state, 'config_json') and state.config_json:
-            agent_instr = state.config_json.get("agent_instructions")
-            if agent_instr:
-                # Handle both plain string and legacy dict format during transition
-                if isinstance(agent_instr, str):
-                    instructions = agent_instr
-                elif isinstance(agent_instr, dict):
-                    instructions = agent_instr.get("en", instructions)
 
         section = flow_template.format(
             flow_id=flow.get('flowId', 'unknown'),
             state_id=flow.get('currentState', 'unknown'),
             instructions=instructions
         )
-
-        # Add enriched context data section if available
-        if flow.get("stateData"):
-            section += self._format_enriched_data(flow['stateData'])
-
-        return section
-
-    def _format_enriched_data(self, state_data: dict) -> str:
-        """
-        Format enriched data for LLM visibility.
-        Shows all eagerly-loaded data in a clear, structured format.
-        """
-        if not state_data:
-            return ""
-
-        import json
-
-        section = "\n\n### Available Context Data\n\n"
-        section += "The following data has been loaded for you to use in your response. "
-        section += "**Do not call tools to fetch this data again** - it is already provided below. "
-        section += "Format and present it naturally:\n\n"
-
-        for key, value in state_data.items():
-            section += f"**{key}:**\n"
-            section += f"```json\n{json.dumps(value, indent=2, ensure_ascii=False)}\n```\n\n"
-
-        return section
-
-    def _format_agent_enriched_data(self, agent_data: dict) -> str:
-        """
-        Format agent-level enriched data for LLM visibility.
-        Similar to _format_enriched_data but for agent-level context.
-        """
-        if not agent_data:
-            return ""
-
-        import json
-
-        section = "\n## Agent Context Data\n\n"
-        section += "The following data has been loaded for this agent to use in your response. "
-        section += "**Do not call tools to fetch this data again** - it is already provided below. "
-        section += "Format and present it naturally:\n\n"
-
-        for key, value in agent_data.items():
-            section += f"**{key}:**\n"
-            section += f"```json\n{json.dumps(value, indent=2, ensure_ascii=False)}\n```\n\n"
 
         return section
 
@@ -439,7 +366,7 @@ class ContextAssembler:
             tool_name=pending.get('toolName', '')
         )
 
-    def _build_navigation_section(self, agent: Agent) -> str:
+    def _build_navigation_section(self, agent: AgentConfig) -> str:
         """Build navigation instructions based on agent capabilities."""
         nav = agent.navigation_tools or {}
         lines = []
@@ -470,23 +397,67 @@ class ContextAssembler:
         return "\n".join(lines)
 
     def _build_tools(
-        self, agent: Agent, current_flow_state: Optional[SubflowState] = None
+        self, agent: AgentConfig, current_flow_state: Optional[SubflowStateConfig] = None
     ) -> List[dict]:
-        """Build the tools array for OpenAI."""
+        """
+        Build the tools array for OpenAI.
+
+        Tool selection priority:
+        1. If in flow with state_tools: ONLY those tools (plus navigation)
+        2. If in flow without state_tools: ONLY navigation tools
+        3. If not in flow AND agent has default_tools: use default_tools whitelist
+        4. If not in flow AND no default_tools: all agent tools (plus navigation)
+        """
         tools = []
 
-        # Add agent-level tools
-        for tool in agent.tools:
-            tools.append(self._tool_to_openai(tool))
+        if current_flow_state:
+            # IN A FLOW STATE - use whitelist-only mode
+            state_tools = current_flow_state.state_tools
 
-        # Add state-specific tools if in a flow
-        if current_flow_state and current_flow_state.state_tools:
-            resolved_state_tools = self._resolve_state_tools(
-                current_flow_state.state_tools, agent
+            if state_tools:
+                # Whitelist mode: only tools explicitly listed in state_tools
+                allowed_names = set(state_tools)
+                agent_tool_names = [t.name for t in agent.tools]
+                logger.debug(
+                    f"Flow state {current_flow_state.state_id}: resolving state_tools {state_tools} "
+                    f"against agent tools {agent_tool_names}"
+                )
+
+                for tool in agent.tools:
+                    if tool.name in allowed_names:
+                        tools.append(tool.to_openai_tool())
+
+                logger.debug(f"Flow state {current_flow_state.state_id}: {len(tools)} whitelisted tools")
+
+                # FAIL-SAFE: If whitelist resolved to ZERO tools, something is wrong
+                # Fall back to all agent tools rather than leaving LLM with only navigation
+                if not tools and agent.tools:
+                    logger.warning(
+                        f"TOOL RESOLUTION FAILED: state_tools {state_tools} resolved to 0 tools. "
+                        f"Agent {agent.config_id} has tools: {agent_tool_names}. "
+                        f"Falling back to all agent tools as safety net."
+                    )
+                    for tool in agent.tools:
+                        tools.append(tool.to_openai_tool())
+            else:
+                # Empty state_tools - only navigation will be available
+                logger.warning(
+                    f"Flow state {current_flow_state.state_id} has no state_tools defined - "
+                    "only navigation tools will be available"
+                )
+        elif agent.default_tools:
+            # NOT IN FLOW - use default_tools whitelist if defined
+            tools = self._resolve_state_tools(agent.default_tools, agent)
+            logger.debug(
+                f"Agent {agent.config_id}: using default_tools whitelist, "
+                f"{len(tools)} of {len(agent.tools)} tools"
             )
-            tools.extend(resolved_state_tools)
+        else:
+            # NOT IN A FLOW, NO WHITELIST - all agent tools available
+            for tool in agent.tools:
+                tools.append(tool.to_openai_tool())
 
-        # Add navigation tools
+        # Add navigation tools (always available)
         nav = agent.navigation_tools or {}
         prompts = load_prompts()
         sections_config = prompts.get("sections", {})
@@ -541,57 +512,8 @@ class ContextAssembler:
 
         return tools
 
-    def _tool_to_openai(self, tool: Tool) -> dict:
-        """Convert a Tool model to OpenAI format."""
-        properties = {}
-        required = []
-
-        # Get description - now a plain string
-        description = tool.description
-        if tool.config_json and "description" in tool.config_json:
-            desc = tool.config_json["description"]
-            # Handle both plain string and legacy dict format during transition
-            if isinstance(desc, str):
-                description = desc
-            elif isinstance(desc, dict):
-                description = desc.get("en", description)
-
-        for param in tool.parameters:
-            prop = {"type": param.get("type", "string")}
-            param_desc = param.get("description", "")
-
-            # Check for description in config_json (now plain strings)
-            if tool.config_json:
-                params_config = tool.config_json.get("parameters", [])
-                for p in params_config:
-                    if p.get("name") == param.get("name") and "description" in p:
-                        pd = p["description"]
-                        # Handle both plain string and legacy dict format during transition
-                        if isinstance(pd, str):
-                            param_desc = pd
-                        elif isinstance(pd, dict):
-                            param_desc = pd.get("en", param_desc)
-                        break
-
-            if param_desc:
-                prop["description"] = param_desc
-
-            properties[param["name"]] = prop
-            if param.get("required", False):
-                required.append(param["name"])
-
-        return {
-            "name": tool.name,
-            "description": description,
-            "input_schema": {
-                "type": "object",
-                "properties": properties,
-                "required": required,
-            },
-        }
-
     def _resolve_state_tools(
-        self, state_tools: List, agent: Agent
+        self, state_tools: List, agent: AgentConfig
     ) -> List[dict]:
         """
         Resolve state_tools which may be tool name strings or inline definitions.
@@ -607,55 +529,137 @@ class ContextAssembler:
         for tool_ref in state_tools:
             if isinstance(tool_ref, str):
                 # It's a tool name reference - look up from agent's tools
-                found = False
-                for tool in agent.tools:
-                    if tool.name == tool_ref:
-                        resolved.append(self._tool_to_openai(tool))
-                        found = True
-                        break
-                if not found:
+                tool = agent.get_tool(tool_ref)
+                if tool:
+                    resolved.append(tool.to_openai_tool())
+                else:
                     logger.warning(
                         f"State tool '{tool_ref}' not found in agent {agent.config_id}"
                     )
             elif isinstance(tool_ref, dict):
-                # It's an inline tool definition
-                resolved.append(self._inline_tool_to_openai(tool_ref))
+                # It's an inline tool definition - convert using ToolConfig
+                inline_tool = ToolConfig.from_dict(tool_ref)
+                resolved.append(inline_tool.to_openai_tool())
             else:
                 logger.warning(f"Unknown state_tools entry type: {type(tool_ref)}")
         return resolved
 
-    def _inline_tool_to_openai(self, tool_def: dict) -> dict:
-        """Convert an inline tool definition to OpenAI format."""
-        properties = {}
-        required = []
+    def _build_routing_context(
+        self, agent: AgentConfig, user_message: str, language: str
+    ) -> AssembledContext:
+        """
+        Build minimal context for routing decisions only.
 
-        # Get description - now a plain string
-        description = tool_def.get("description", "")
-        # Handle both plain string and legacy dict format during transition
-        if isinstance(description, dict):
-            description = description.get("en", "")
+        This mode is used during routing chain iterations (after the first)
+        when the LLM only needs to make a routing decision, not handle
+        the full conversation. Reduces tokens by ~80%.
 
-        for param in tool_def.get("parameters", []):
-            prop = {"type": param.get("type", "string")}
-            param_desc = param.get("description", "")
-            # Handle both plain string and legacy dict format during transition
-            if isinstance(param_desc, dict):
-                param_desc = param_desc.get("en", "")
-            if param_desc:
-                prop["description"] = param_desc
-            properties[param["name"]] = prop
-            if param.get("required", False):
-                required.append(param["name"])
+        Includes:
+        - Minimal system prompt (~50 tokens)
+        - Brief agent capabilities (first line of description)
+        - Language directive (required)
+        - Single user message (no history)
+        - Only routing tools (tools with routing config)
+        """
+        token_counts = {}
 
-        return {
-            "name": tool_def["name"],
-            "description": description,
-            "input_schema": {
-                "type": "object",
-                "properties": properties,
-                "required": required,
-            },
-        }
+        # Minimal system prompt
+        system_prompt = "You are routing a user request. Call the appropriate tool to handle it."
+        token_counts["base_prompt"] = count_tokens(system_prompt)
+
+        # Brief agent capabilities (first line only)
+        description_first_line = agent.description.split("\n")[0] if agent.description else ""
+        if description_first_line:
+            system_prompt += f"\n\nCapabilities: {description_first_line}"
+            token_counts["agent_description"] = count_tokens(description_first_line)
+
+        # Add language directive
+        language_directive = get_language_directive(language)
+        system_prompt += f"\n\n{language_directive}"
+        token_counts["language_directive"] = count_tokens(language_directive)
+
+        token_counts["total_system"] = count_tokens(system_prompt)
+
+        # Single user message only (no history)
+        messages = [{"role": "user", "content": user_message}]
+        token_counts["messages"] = count_tokens(user_message)
+
+        # Only routing tools
+        tools = self._build_routing_tools(agent)
+        token_counts["tools"] = count_tokens(str(tools))
+
+        # Use agent's model config
+        model_cfg = agent.model_config or {}
+        model = model_cfg.get("model", settings.default_model)
+        temperature = model_cfg.get("temperature", settings.default_temperature)
+        max_tokens = model_cfg.get("maxTokens", settings.default_max_tokens)
+
+        logger.debug(
+            f"ROUTING mode context: {token_counts['total_system']} system tokens, "
+            f"{len(tools)} routing tools"
+        )
+
+        return AssembledContext(
+            system_prompt=system_prompt,
+            messages=messages,
+            tools=tools,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            token_counts=token_counts,
+        )
+
+    def _build_routing_tools(self, agent: AgentConfig) -> List[dict]:
+        """
+        Build tools array containing only routing tools.
+
+        Routing tools are those with a non-None routing config (enter_agent,
+        start_flow, navigation). This excludes service tools like get_exchange_rate.
+        """
+        tools = []
+        tool_names_added = set()
+
+        for tool in agent.tools:
+            if tool.routing is not None:
+                tools.append(tool.to_openai_tool())
+                tool_names_added.add(tool.name)
+
+        # Add navigation tools if not already present (from agent tools with routing)
+        nav = agent.navigation_tools or {}
+        prompts = load_prompts()
+        sections_config = prompts.get("sections", {})
+
+        # go_home for non-root agents (if not already added)
+        if agent.parent_agent_id is not None and "go_home" not in tool_names_added:
+            go_home_desc = sections_config.get(
+                "go_home_tool",
+                "Transfer the conversation to the main assistant."
+            )
+            tools.append({
+                "name": "go_home",
+                "description": go_home_desc,
+                "input_schema": {"type": "object", "properties": {}},
+            })
+
+        if nav.get("canGoUp") and "up_one_level" not in tool_names_added:
+            tools.append({
+                "name": "up_one_level",
+                "description": "Go back to the previous agent/menu",
+                "input_schema": {"type": "object", "properties": {}},
+            })
+
+        if nav.get("canEscalate") and "escalate_to_human" not in tool_names_added:
+            tools.append({
+                "name": "escalate_to_human",
+                "description": "Escalate to a human agent",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"reason": {"type": "string"}},
+                    "required": ["reason"],
+                },
+            })
+
+        return tools
 
 
 # Global assembler instance

@@ -10,29 +10,23 @@ from dataclasses import dataclass, field
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
-from app.models.agent import Agent, Tool, ResponseTemplate
 from app.models.session import ConversationSession
 from app.models.user import UserContext
 from app.models.conversation import ConversationMessage
-from app.models.subflow import Subflow, SubflowState
 from app.core.llm_client import LLMClient, LLMResponse, ToolCall, get_llm_client
 from app.core.context_assembler import ContextAssembler, AssembledContext, get_context_assembler
+from app.core.config_types import PromptMode
 from app.core.state_manager import StateManager
 from app.core.tool_executor import ToolExecutor, ToolResult, get_tool_executor
 from app.core.template_renderer import TemplateRenderer, get_template_renderer
 from app.core.routing import RoutingType, RoutingOutcome
-from app.core.routing_registry import get_routing_registry
 from app.core.routing_handler import RoutingHandler
+from app.core.agent_registry import get_agent_registry
+from app.core.config_types import AgentConfig, ToolConfig, SubflowConfig, SubflowStateConfig  # PromptMode imported above
 from app.core.history_compactor import HistoryCompactor
-from app.core.config_loader import load_shadow_service_config
-from app.core.shadow_service import (
-    ShadowService,
-    ShadowServiceConfig,
-    ShadowResult,
-    ShadowMessage,
-)
+from app.core.event_trace import EventTracer, EventCategory, EventLevel
+from app.core.context_enrichment import evaluate_condition
 
 logger = logging.getLogger(__name__)
 
@@ -57,10 +51,10 @@ class DebugInfo:
     flow_info: Optional[dict] = None
     context_sections: Optional[dict] = None
     processing_time_ms: Optional[int] = None
-    enrichment_info: Optional[dict] = None
     routing_path: List[dict] = field(default_factory=list)
     chain_iterations: int = 0
     stable_state_reached: bool = False
+    event_trace: List[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -75,7 +69,6 @@ class OrchestratorResponse:
     pending_confirmation: Optional[dict] = None
     flow_state: Optional[str] = None
     escalated: bool = False
-    shadow_messages: List[ShadowMessage] = field(default_factory=list)
     debug: Optional[DebugInfo] = None
 
 
@@ -102,7 +95,6 @@ class Orchestrator:
         context_assembler: Optional[ContextAssembler] = None,
         tool_executor: Optional[ToolExecutor] = None,
         template_renderer: Optional[TemplateRenderer] = None,
-        shadow_service: Optional[ShadowService] = None,
     ):
         self.db = db
         self.llm_client = llm_client or get_llm_client()
@@ -111,18 +103,6 @@ class Orchestrator:
         self.template_renderer = template_renderer or get_template_renderer()
         self.state_manager = StateManager(db)
         self.routing_handler: Optional[RoutingHandler] = None
-
-        # Initialize context enrichment
-        from app.core.context_enrichment import ContextEnrichment
-        self.context_enrichment = ContextEnrichment(db, self.tool_executor)
-
-        # Initialize shadow service
-        if shadow_service:
-            self.shadow_service = shadow_service
-        else:
-            shadow_config_dict = load_shadow_service_config()
-            shadow_config = ShadowServiceConfig.from_dict(shadow_config_dict)
-            self.shadow_service = ShadowService(self.llm_client, shadow_config)
 
     async def handle_message(
         self,
@@ -140,21 +120,34 @@ class Orchestrator:
         Flow:
         1. Setup: Load session, agent, user context
         2. Routing Chain: Loop until stable state
-           - Enrich context if needed
            - Call LLM
            - Process tools, detect routing
            - If routing occurred, continue chain with new agent
-        3. Final Response: Run shadow service, record messages, return
+        3. Final Response: Record messages, return
         """
         start_time = time.time()
 
+        # Initialize event tracer for this request
+        tracer = EventTracer(user_message=user_message)
+        self._current_tracer = tracer  # Store for lazy-initialized components
+
+        # Pass tracer to routing handler if exists
+        if self.routing_handler:
+            self.routing_handler.tracer = tracer
+
         # === PHASE 1: SETUP ===
-        root_agent = await self._get_root_agent()
+        root_agent = self._get_root_agent()
         if not root_agent:
+            tracer.error("no_root_agent", "No root agent configured")
             raise ValueError("No root agent configured")
 
         session = await self.state_manager.get_or_create_session(
-            session_id, user_id, str(root_agent.id)
+            session_id, user_id, root_agent.config_id
+        )
+        tracer.trace(
+            EventCategory.SESSION, "session_loaded",
+            f"Session {session.session_id} for user {user_id}",
+            data={"session_id": str(session.session_id), "user_id": user_id, "new": session_id is None}
         )
 
         # Check for pending confirmation
@@ -162,16 +155,22 @@ class Orchestrator:
             return await self._handle_confirmation_response(session, user_message)
 
         # Get current agent
-        agent = await self.state_manager.get_current_agent(session)
+        agent = self.state_manager.get_current_agent(session)
         if not agent:
             agent = root_agent
             session.agent_stack = [
                 {
-                    "agentId": str(root_agent.id),
+                    "agentId": root_agent.config_id,
                     "enteredAt": "now",
                     "entryReason": "Session start",
                 }
             ]
+
+        tracer.trace(
+            EventCategory.AGENT, "agent_active",
+            f"Current agent: {agent.name}",
+            data={"agent_id": agent.config_id, "agent_name": agent.name, "stack_depth": len(session.agent_stack or [])}
+        )
 
         # Get user context and set language
         user_context = await self._get_user_context(user_id)
@@ -191,37 +190,35 @@ class Orchestrator:
 
         # === PHASE 2: ROUTING CHAIN ===
         chain_state = ChainState()
-        MAX_CHAIN_ITERATIONS = 3
         response_text = None
         debug_llm_call = None
         all_tool_calls = []
+        routing_occurred_previously = False  # Track if routing occurred in any previous iteration
 
-        while chain_state.iteration < MAX_CHAIN_ITERATIONS:
+        while True:
             chain_state.iteration += 1
-            chain_state.routing_occurred = False
+
+            # Determine prompt mode: use ROUTING mode for subsequent iterations
+            # after routing has occurred (minimal context for routing decisions)
+            prompt_mode = PromptMode.FULL
+            if chain_state.iteration > 1 and routing_occurred_previously:
+                prompt_mode = PromptMode.ROUTING
+
+            chain_state.routing_occurred = False  # Reset for this iteration
+
+            tracer.trace(
+                EventCategory.ROUTING, "chain_iteration_start",
+                f"Chain iteration {chain_state.iteration}",
+                data={"iteration": chain_state.iteration, "prompt_mode": prompt_mode.value}
+            )
 
             # Get current agent (may have changed from previous iteration)
-            agent = await self.state_manager.get_current_agent(session)
-            await self.db.refresh(agent, ["tools", "subflows", "response_templates"])
-
-            # Run enrichment if state changed or first iteration
-            if self._should_enrich_context(session, agent):
-                try:
-                    enriched_data = await self.context_enrichment.enrich_state(
-                        session=session,
-                        agent=agent,
-                        context_requirements=[]
-                    )
-                    await self._merge_enriched_data(session, enriched_data, agent)
-                    await self.db.commit()
-                    logger.info(f"Chain iteration {chain_state.iteration}: enrichment completed ({len(enriched_data)} items)")
-                except Exception as e:
-                    logger.error(f"Chain enrichment failed (non-blocking): {e}")
+            agent = self.state_manager.get_current_agent(session)
 
             # Get current flow state
-            flow_state = await self.state_manager.get_current_flow_state(session)
+            flow_state = self.state_manager.get_current_flow_state(session)
 
-            # Assemble context
+            # Assemble context (ROUTING mode uses minimal context)
             context = self.context_assembler.assemble(
                 session=session,
                 user_message=user_message,
@@ -230,11 +227,26 @@ class Orchestrator:
                 recent_messages=recent_messages,
                 compacted_history=compacted_history,
                 current_flow_state=flow_state,
+                mode=prompt_mode,
             )
 
             logger.info(f"Chain iteration {chain_state.iteration}: calling LLM for agent {agent.config_id}")
 
-            # Call LLM (shadow service runs only on final iteration)
+            # Call LLM
+            llm_start = time.time()
+            llm_id = tracer.trace(
+                EventCategory.LLM, "llm_request",
+                f"Calling {context.model} with {len(context.tools) if context.tools else 0} tools",
+                data={
+                    "model": context.model,
+                    "tool_count": len(context.tools) if context.tools else 0,
+                    "message_count": len(context.messages),
+                    "temperature": context.temperature,
+                    "system_prompt": context.system_prompt,
+                    "messages": context.messages,
+                    "tools": context.tools if context.tools else []
+                }
+            )
             llm_response = await self.llm_client.complete(
                 system_prompt=context.system_prompt,
                 messages=context.messages,
@@ -243,7 +255,25 @@ class Orchestrator:
                 temperature=context.temperature,
                 max_tokens=context.max_tokens,
             )
+            llm_duration = int((time.time() - llm_start) * 1000)
             chain_state.last_llm_response = llm_response
+
+            tracer.trace(
+                EventCategory.LLM, "llm_response",
+                f"Response: {len(llm_response.tool_calls)} tool calls, {llm_response.output_tokens} tokens",
+                duration_ms=llm_duration,
+                parent_id=llm_id,
+                data={
+                    "text": llm_response.text,
+                    "tool_calls": [
+                        {"id": tc.id, "name": tc.name, "parameters": tc.parameters}
+                        for tc in llm_response.tool_calls
+                    ],
+                    "input_tokens": llm_response.input_tokens,
+                    "output_tokens": llm_response.output_tokens,
+                    "stop_reason": llm_response.stop_reason
+                }
+            )
 
             # Capture debug info from last LLM call
             debug_llm_call = DebugLLMCall(
@@ -258,74 +288,63 @@ class Orchestrator:
 
             # Process tools, detect routing
             response_text = await self._process_chain_tools(
-                session, agent, llm_response, chain_state, context
+                session, agent, llm_response, chain_state, context, tracer
             )
             all_tool_calls.extend(chain_state.last_tool_calls)
 
             # Exit conditions
             if chain_state.error:
+                tracer.trace(
+                    EventCategory.ERROR, "chain_error",
+                    f"Chain error: {chain_state.error}",
+                    level=EventLevel.ERROR,
+                    data={"iteration": chain_state.iteration, "error": chain_state.error}
+                )
                 logger.error(f"Chain error at iteration {chain_state.iteration}: {chain_state.error}")
                 response_text = "Lo siento, encontré un problema. ¿En qué más puedo ayudarte?"
                 break
 
             if chain_state.confirmation_pending:
+                tracer.trace(
+                    EventCategory.TOOL, "confirmation_pending",
+                    "Waiting for user confirmation",
+                    data={"iteration": chain_state.iteration}
+                )
                 logger.info(f"Chain paused for confirmation at iteration {chain_state.iteration}")
                 break
 
             if not chain_state.routing_occurred:
                 chain_state.stable_state_reached = True
+                tracer.trace(
+                    EventCategory.ROUTING, "stable_state_reached",
+                    f"Chain stable after {chain_state.iteration} iterations",
+                    data={"iteration": chain_state.iteration}
+                )
                 logger.info(f"Chain reached stable state at iteration {chain_state.iteration}")
                 break
 
+            # Track that routing occurred (for ROUTING mode in next iteration)
+            routing_occurred_previously = True
+
             if self._detect_chain_loop(chain_state):
+                tracer.trace(
+                    EventCategory.ERROR, "chain_loop_detected",
+                    "Routing chain loop detected",
+                    level=EventLevel.ERROR,
+                    data={"iteration": chain_state.iteration, "path": chain_state.routing_path}
+                )
                 logger.error(f"Chain loop detected at iteration {chain_state.iteration}")
                 response_text = "Parece que estamos en un bucle. ¿Podrías reformular tu solicitud?"
                 break
 
-        # Check for max iterations
-        if chain_state.iteration >= MAX_CHAIN_ITERATIONS and not chain_state.stable_state_reached:
-            logger.warning(f"Chain reached max iterations ({MAX_CHAIN_ITERATIONS})")
-            if not response_text:
-                response_text = "Lo siento, tu solicitud requiere más pasos. ¿Podrías ser más específico?"
-
         # === PHASE 3: FINAL RESPONSE ===
-
-        # Run shadow service ONLY on final state (after chain completes)
-        shadow_result = ShadowResult()
-        try:
-            shadow_result = await self.shadow_service.evaluate(
-                user_message=user_message,
-                session=session,
-                user_context=user_context,
-                recent_messages=recent_messages,
-                language=language,
-            )
-        except Exception as e:
-            logger.error(f"Shadow service error (non-blocking): {e}")
-
-        # Handle shadow activation (takeover)
-        if shadow_result.has_activation:
-            activation = shadow_result.activation
-            logger.info(
-                f"Shadow takeover after chain: {activation.subagent_id} -> {activation.target_agent_id} "
-                f"(intent: {activation.intent})"
-            )
-            await self.state_manager.push_agent(
-                session,
-                activation.target_agent_id,
-                reason=f"Shadow takeover: {activation.intent}",
-                preserve_flow=True,
-            )
-            # Re-run handle_message with new agent context
-            return await self.handle_message(
-                user_message,
-                user_id,
-                session.session_id,
-            )
 
         # Ensure we have a response
         if not response_text:
             response_text = chain_state.last_llm_response.text if chain_state.last_llm_response else ""
+
+        # Set response on tracer for turn grouping
+        tracer.set_response(response_text)
 
         # Record messages
         await self._record_messages(session, user_message, response_text, all_tool_calls, agent)
@@ -344,13 +363,13 @@ class Orchestrator:
         # Build debug info
         processing_time_ms = int((time.time() - start_time) * 1000)
 
-        enrichment_info = {
-            "last_agent_id": session.session_metadata.get("last_enrichment_agent_id") if session.session_metadata else None,
-            "last_state": session.session_metadata.get("last_enrichment_state") if session.session_metadata else None,
-            "has_agent_data": bool(session.session_metadata.get("agent_enriched_data")) if session.session_metadata else False,
-            "has_flow_data": bool(session.current_flow and session.current_flow.get("stateData")),
-            "last_error": session.session_metadata.get("last_enrichment_error") if session.session_metadata else None
-        }
+        # Add final trace event
+        tracer.trace(
+            EventCategory.SESSION, "response_ready",
+            f"Response ready after {processing_time_ms}ms",
+            duration_ms=processing_time_ms,
+            data={"iterations": chain_state.iteration, "stable": chain_state.stable_state_reached}
+        )
 
         debug_info = DebugInfo(
             llm_call=debug_llm_call,
@@ -358,27 +377,21 @@ class Orchestrator:
             flow_info=session.current_flow,
             context_sections=context.token_counts if debug_llm_call else None,
             processing_time_ms=processing_time_ms,
-            enrichment_info=enrichment_info,
             routing_path=chain_state.routing_path,
             chain_iterations=chain_state.iteration,
             stable_state_reached=chain_state.stable_state_reached,
+            event_trace=tracer.to_list(),
         )
-
-        # Update shadow cooldowns
-        if shadow_result.has_messages:
-            triggered_ids = [m.subagent_id for m in shadow_result.messages]
-            self.shadow_service.update_cooldowns(session, triggered_ids)
 
         return OrchestratorResponse(
             session_id=session.session_id,
             message=response_text,
-            agent_id=str(agent.id),
+            agent_id=agent.config_id,
             agent_name=agent.name,
             tool_calls=all_tool_calls,
             pending_confirmation=session.pending_confirmation,
             flow_state=session.current_flow.get("currentState") if session.current_flow else None,
             escalated=session.status == "escalated",
-            shadow_messages=shadow_result.messages,
             debug=debug_info,
         )
 
@@ -386,8 +399,7 @@ class Orchestrator:
         self, session: ConversationSession, user_message: str
     ) -> OrchestratorResponse:
         """Handle a response to a pending confirmation."""
-        agent = await self.state_manager.get_current_agent(session)
-        await self.db.refresh(agent, ["tools", "response_templates"])
+        agent = self.state_manager.get_current_agent(session)
 
         # Check if confirmation expired
         if self.state_manager.is_confirmation_expired(session):
@@ -400,7 +412,7 @@ class Orchestrator:
         if is_confirmed is True:
             # Execute the confirmed tool
             pending = session.pending_confirmation
-            tool = await self._get_tool_by_name(agent, pending["toolName"])
+            tool = self._get_tool_by_name(agent, pending["toolName"])
 
             if tool:
                 result = await self.tool_executor.execute(
@@ -412,7 +424,7 @@ class Orchestrator:
 
                 if result.success:
                     # LLM handles formatting now
-                    response_text = "✅ Operación completada exitosamente. ¿En qué más puedo ayudarte?"
+                    response_text = "Operación completada exitosamente. ¿En qué más puedo ayudarte?"
 
                     # Handle flow transition if applicable
                     if session.current_flow and tool.flow_transition:
@@ -448,7 +460,7 @@ class Orchestrator:
         return OrchestratorResponse(
             session_id=session.session_id,
             message=response_text,
-            agent_id=str(agent.id),
+            agent_id=agent.config_id,
             agent_name=agent.name,
             tool_calls=[],
             pending_confirmation=session.pending_confirmation,
@@ -458,8 +470,8 @@ class Orchestrator:
     async def _handle_flow_transition(
         self,
         session: ConversationSession,
-        agent: Agent,
-        tool: Tool,
+        agent: AgentConfig,
+        tool: ToolConfig,
         result: ToolResult,
     ) -> Optional[str]:
         """
@@ -482,8 +494,10 @@ class Orchestrator:
             return None
 
         # Get the target state definition
-        target_state = await self.state_manager.get_flow_state(
-            session.current_flow["flowId"], target_state_id
+        target_state = self.state_manager.get_flow_state(
+            session.current_flow["agentId"],
+            session.current_flow["flowId"],
+            target_state_id
         )
 
         if not target_state:
@@ -504,11 +518,124 @@ class Orchestrator:
 
         return response_text
 
+    async def _evaluate_state_transitions(
+        self,
+        session: ConversationSession,
+        agent: AgentConfig,
+        tool_name: str,
+        tool_result: dict,
+        tracer: EventTracer,
+    ) -> Optional[str]:
+        """
+        Evaluate declarative transitions for current state after tool execution.
+
+        This method checks if any state transitions should fire based on:
+        1. tool_trigger matching the executed tool
+        2. condition evaluating to true against stateData + tool result
+
+        Returns a response message if a transition occurred, None otherwise.
+        """
+        if not session.current_flow:
+            return None
+
+        # Get current flow state
+        current_state = self._get_current_flow_state(session)
+        if not current_state or not current_state.transitions:
+            return None
+
+        # Build evaluation context: existing stateData + tool result
+        state_data = session.current_flow.get("stateData", {})
+        eval_context = {
+            **state_data,
+            "_tool_result": tool_result,  # Current tool result accessible as _tool_result.key
+        }
+
+        # Also store tool result under tool name for easier access
+        eval_context[f"_result_{tool_name}"] = tool_result
+
+        # Evaluate each transition in order (first match wins)
+        for transition in current_state.transitions:
+            # Check tool_trigger match (if specified)
+            tool_trigger = transition.get("tool_trigger")
+            if tool_trigger and tool_trigger != tool_name:
+                continue  # This transition doesn't match this tool
+
+            # Evaluate condition (if specified)
+            condition = transition.get("condition")
+            if condition and not evaluate_condition(condition, eval_context):
+                continue  # Condition not satisfied
+
+            # Transition matches!
+            target_state_id = transition.get("target")
+            if not target_state_id:
+                logger.warning(f"Transition missing 'target' field: {transition}")
+                continue
+
+            trigger_name = transition.get("trigger", "unnamed")
+            logger.info(
+                f"Declarative transition triggered: {trigger_name} -> {target_state_id} "
+                f"(tool: {tool_name}, condition: {condition})"
+            )
+
+            # Trace the transition
+            tracer.trace(
+                EventCategory.FLOW,
+                "declarative_transition_triggered",
+                f"Transition '{trigger_name}' -> {target_state_id}",
+                data={
+                    "trigger": trigger_name,
+                    "tool_name": tool_name,
+                    "condition": condition,
+                    "target_state": target_state_id,
+                }
+            )
+
+            # Get the target state definition
+            target_state = self.state_manager.get_flow_state(
+                session.current_flow["agentId"],
+                session.current_flow["flowId"],
+                target_state_id
+            )
+
+            if not target_state:
+                logger.warning(f"Target state {target_state_id} not found in flow")
+                return None
+
+            # Store the tool result in flow data before transitioning
+            await self.state_manager.update_flow_data(session, tool_result)
+
+            # Perform the transition
+            await self.state_manager.transition_state(session, target_state_id, target_state)
+
+            # Handle on_enter actions for the new state
+            response_text = None
+            if target_state.on_enter:
+                response_text = await self._handle_on_enter(target_state, session, agent)
+
+            return response_text if response_text else ""  # Return empty string to signal transition occurred
+
+        # No transition matched
+        return None
+
+    def _get_current_flow_state(self, session: ConversationSession) -> Optional[SubflowStateConfig]:
+        """Get the current flow state configuration."""
+        if not session.current_flow:
+            return None
+
+        agent_id = session.current_flow.get("agentId")
+        flow_id = session.current_flow.get("flowId")
+        state_id = session.current_flow.get("currentState")
+
+        if not agent_id or not flow_id or not state_id:
+            return None
+
+        return self.state_manager.get_flow_state(agent_id, flow_id, state_id)
+
     async def _handle_on_enter(
         self,
-        state: SubflowState,
+        state: SubflowStateConfig,
         session: ConversationSession,
-        agent: Agent,
+        agent: AgentConfig,
     ) -> Optional[str]:
         """Handle on_enter actions when entering a state."""
         if not state.on_enter:
@@ -516,36 +643,6 @@ class Orchestrator:
 
         on_enter = state.on_enter
         response_text = None
-
-        # Handle callTool action (execute tool automatically on state entry)
-        if on_enter.get("callTool"):
-            tool_config = on_enter["callTool"]
-            tool_name = tool_config.get("name")
-            tool_params = tool_config.get("parameters", {})
-
-            if tool_name:
-                logger.info(f"Executing on_enter tool: {tool_name}")
-                try:
-                    # Create a ToolCall object
-                    from app.core.llm_client import ToolCall
-                    tool_call = ToolCall(name=tool_name, parameters=tool_params)
-
-                    # Execute the tool
-                    result = await self._process_tool_call(session, agent, tool_call)
-
-                    # Store result in flow data if specified
-                    if result and result.success and tool_config.get("storeAs"):
-                        flow_data = session.current_flow.get("stateData", {}) if session.current_flow else {}
-                        flow_data[tool_config["storeAs"]] = result.data
-                        await self.state_manager.update_flow_data(session, flow_data)
-
-                    # Store the raw data - formatting will be handled by templates or LLM
-                    if result and result.success and result.data:
-                        # Let the message template or LLM handle formatting
-                        pass
-
-                except Exception as e:
-                    logger.error(f"Error executing on_enter tool {tool_name}: {e}")
 
         # Handle message action (check both "message" and "sendMessage" keys)
         template = on_enter.get("message") or on_enter.get("sendMessage")
@@ -559,90 +656,9 @@ class Orchestrator:
             # Render template with flow data
             flow_data = session.current_flow.get("stateData", {}) if session.current_flow else {}
             rendered_message = self.template_renderer.render(template, flow_data)
-
-            # Combine with tool response if both exist
-            if response_text:
-                response_text = f"{response_text}\n\n{rendered_message}"
-            else:
-                response_text = rendered_message
-
-        # Handle fetchContext action (just log for now, context is re-assembled on next message)
-        if on_enter.get("fetchContext"):
-            logger.info(f"State {state.name} requests additional context: {on_enter['fetchContext']}")
+            response_text = rendered_message
 
         return response_text
-
-    def _should_enrich_context(self, session: ConversationSession, current_agent: Agent) -> bool:
-        """
-        Determine if context enrichment should run.
-
-        Returns True if:
-        1. Agent just changed (new agent since last enrichment)
-        2. In a flow and this is the first message in current state
-        """
-        # Initialize metadata if needed
-        if not session.session_metadata:
-            logger.info("No enrichment metadata - enrichment needed (first message)")
-            return True
-
-        # Check 1: Has agent changed since last enrichment?
-        last_agent_id = session.session_metadata.get("last_enrichment_agent_id")
-        current_agent_id = str(current_agent.id)
-
-        if last_agent_id != current_agent_id:
-            logger.info(
-                f"Agent changed from {last_agent_id} to {current_agent_id} - enrichment needed"
-            )
-            return True
-
-        # Check 2: Are we in a flow with a state change?
-        if session.current_flow:
-            current_state = session.current_flow.get("currentState")
-            last_enrichment_state = session.session_metadata.get("last_enrichment_state")
-
-            if last_enrichment_state != current_state:
-                logger.info(
-                    f"Flow state changed from {last_enrichment_state} to {current_state} - enrichment needed"
-                )
-                return True
-
-        # Same agent, same state (or no flow) - already enriched
-        logger.debug(f"Context already enriched for agent {current_agent_id}")
-        return False
-
-    async def _merge_enriched_data(
-        self, session: ConversationSession, enriched_data: dict, agent: Agent
-    ):
-        """
-        Merge enriched data into appropriate location based on context.
-
-        - Agent-level data → session.session_metadata["agent_enriched_data"]
-        - Flow-level data → session.current_flow["stateData"]
-        """
-        if not session.current_flow:
-            # No flow active - this is agent-level enrichment
-            if not session.session_metadata:
-                session.session_metadata = {}
-            if "agent_enriched_data" not in session.session_metadata:
-                session.session_metadata["agent_enriched_data"] = {}
-
-            # Store in agent-scoped enrichment
-            session.session_metadata["agent_enriched_data"].update(enriched_data)
-            logger.info(f"Stored {len(enriched_data)} items in agent-level enriched data")
-        else:
-            # Flow active - store in flow state data
-            if "stateData" not in session.current_flow:
-                session.current_flow["stateData"] = {}
-            session.current_flow["stateData"].update(enriched_data)
-            logger.info(f"Stored {len(enriched_data)} items in flow state data")
-
-        # ALWAYS track that enrichment happened for this agent/state
-        if not session.session_metadata:
-            session.session_metadata = {}
-        session.session_metadata["last_enrichment_agent_id"] = str(agent.id)
-
-        if session.current_flow:
-            session.session_metadata["last_enrichment_state"] = session.current_flow.get("currentState")
 
     def _detect_chain_loop(self, chain_state: ChainState) -> bool:
         """
@@ -668,10 +684,11 @@ class Orchestrator:
     async def _process_chain_tools(
         self,
         session: ConversationSession,
-        agent: Agent,
+        agent: AgentConfig,
         llm_response: LLMResponse,
         chain_state: ChainState,
         context: AssembledContext,
+        tracer: EventTracer,
     ) -> Optional[str]:
         """
         Process tool calls within a routing chain iteration.
@@ -694,7 +711,16 @@ class Orchestrator:
         service_tool_results: list[dict] = []
 
         for tool_call in llm_response.tool_calls:
+            tool_start = time.time()
+            tool_id = tracer.trace(
+                EventCategory.TOOL, "tool_started",
+                f"Executing: {tool_call.name}",
+                data={"tool_name": tool_call.name, "params": tool_call.parameters}
+            )
+
             result = await self._process_tool_call(session, agent, tool_call)
+            tool_duration = int((time.time() - tool_start) * 1000)
+
             chain_state.last_tool_calls.append({
                 "name": tool_call.name,
                 "params": tool_call.parameters,
@@ -707,6 +733,18 @@ class Orchestrator:
                 if routing_outcome_data:
                     routing_outcome = RoutingOutcome.from_dict(routing_outcome_data)
 
+                    # Trace routing classification
+                    tracer.trace(
+                        EventCategory.ROUTING, "tool_classified",
+                        f"Tool {tool_call.name} is ROUTING type",
+                        parent_id=tool_id,
+                        data={
+                            "routing_type": routing_outcome.routing_type if hasattr(routing_outcome, 'routing_type') else "routing",
+                            "state_changed": routing_outcome.state_changed,
+                            "target": routing_outcome.target_id if hasattr(routing_outcome, 'target_id') else None
+                        }
+                    )
+
                     # Track routing path for loop detection
                     from datetime import datetime
                     chain_state.routing_path.append({
@@ -718,36 +756,29 @@ class Orchestrator:
                     })
 
                     if routing_outcome.error:
+                        tracer.trace(
+                            EventCategory.ROUTING, "routing_error",
+                            f"Routing failed: {routing_outcome.error}",
+                            level=EventLevel.ERROR,
+                            parent_id=tool_id,
+                            data={"error": routing_outcome.error}
+                        )
                         chain_state.error = routing_outcome.error
                         return None
 
                     if routing_outcome.state_changed:
+                        tracer.trace(
+                            EventCategory.ROUTING, "routing_executed",
+                            f"State changed by {tool_call.name}",
+                            duration_ms=tool_duration,
+                            parent_id=tool_id,
+                            data={"state_changed": True}
+                        )
                         chain_state.routing_occurred = True
                         await self.db.commit()
 
                         # Refresh session and get new agent
                         await self.db.refresh(session)
-                        new_agent = await self.state_manager.get_current_agent(session)
-                        await self.db.refresh(new_agent, ["tools", "subflows"])
-
-                        # Run enrichment for new state
-                        if session.current_flow or self._should_enrich_context(session, new_agent):
-                            try:
-                                enriched_data = await self.context_enrichment.enrich_state(
-                                    session=session,
-                                    agent=new_agent,
-                                    context_requirements=routing_outcome.context_requirements
-                                )
-                                await self._merge_enriched_data(session, enriched_data, new_agent)
-
-                                # Clear agent-level enriched data when entering flow
-                                if session.current_flow and session.session_metadata:
-                                    session.session_metadata.pop("agent_enriched_data", None)
-
-                                await self.db.commit()
-                                logger.info(f"Chain enrichment completed: {len(enriched_data)} items")
-                            except Exception as e:
-                                logger.error(f"Chain enrichment failed (non-blocking): {e}")
 
                         # Break tool loop to continue chain with new agent context
                         return None
@@ -769,9 +800,9 @@ class Orchestrator:
                 chain_state.confirmation_pending = True
                 return result.confirmation_message
 
-            # Handle flow transitions
+            # Handle flow transitions (explicit tool-level flow_transition)
             if result and result.success and session.current_flow:
-                tool = await self._get_tool_by_name(agent, tool_call.name)
+                tool = self._get_tool_by_name(agent, tool_call.name)
                 if tool and tool.flow_transition:
                     transition_result = await self._handle_flow_transition(
                         session, agent, tool, result
@@ -779,7 +810,45 @@ class Orchestrator:
                     if transition_result:
                         return transition_result
 
+            # Handle declarative state transitions (state-level transitions list)
+            if result and result.success and session.current_flow:
+                tool_result_data = result.data if isinstance(result.data, dict) else {}
+                transition_result = await self._evaluate_state_transitions(
+                    session=session,
+                    agent=agent,
+                    tool_name=tool_call.name,
+                    tool_result=tool_result_data,
+                    tracer=tracer,
+                )
+                if transition_result is not None:  # Empty string means transition occurred
+                    # Signal that state changed so chain continues with new context
+                    chain_state.routing_occurred = True
+                    await self.db.commit()
+                    await self.db.refresh(session)
+                    return transition_result if transition_result else None
+
             # This is a service tool - track it for feedback loop
+            tracer.trace(
+                EventCategory.TOOL, "tool_classified",
+                f"Tool {tool_call.name} is SERVICE type",
+                parent_id=tool_id,
+                data={"routing_type": "SERVICE"}
+            )
+
+            # Log tool completion with full result data
+            tracer.trace(
+                EventCategory.TOOL, "tool_complete",
+                f"{tool_call.name}: {'success' if result and result.success else 'failed'}",
+                level=EventLevel.INFO if result and result.success else EventLevel.ERROR,
+                duration_ms=tool_duration,
+                parent_id=tool_id,
+                data={
+                    "success": result.success if result else False,
+                    "result_data": result.data if result else None,
+                    "error": result.error if result and not result.success else None
+                }
+            )
+
             service_tool_calls.append(tool_call)
             service_tool_results.append({
                 "tool_call_id": tool_call.id,
@@ -810,7 +879,19 @@ class Orchestrator:
                 ]
             })
 
+            tracer.trace(
+                EventCategory.LLM, "tool_feedback_started",
+                f"Feeding {len(service_tool_results)} results back to LLM",
+                data={
+                    "tool_count": len(service_tool_results),
+                    "tool_results": service_tool_results,
+                    "messages_with_tool_calls": messages_with_tool_calls,
+                    "system_prompt": context.system_prompt
+                }
+            )
+
             try:
+                feedback_start = time.time()
                 # Don't pass tools - force LLM to respond with text, not more tool calls
                 continuation_response = await self.llm_client.complete_with_tool_results(
                     system_prompt=context.system_prompt,
@@ -818,9 +899,26 @@ class Orchestrator:
                     tools=[],  # Empty to force text response
                     tool_results=service_tool_results,
                 )
+                feedback_duration = int((time.time() - feedback_start) * 1000)
+                tracer.trace(
+                    EventCategory.LLM, "tool_feedback_complete",
+                    f"Continuation response received",
+                    duration_ms=feedback_duration,
+                    data={
+                        "text": continuation_response.text,
+                        "output_tokens": continuation_response.output_tokens,
+                        "input_tokens": continuation_response.input_tokens
+                    }
+                )
                 chain_state.last_llm_response = continuation_response
                 return continuation_response.text
             except Exception as e:
+                tracer.trace(
+                    EventCategory.ERROR, "tool_feedback_failed",
+                    f"Feedback failed: {str(e)}",
+                    level=EventLevel.ERROR,
+                    data={"error": str(e)}
+                )
                 logger.error(f"Tool result feedback failed: {e}")
                 # Fall back to original response
                 return response_text
@@ -828,7 +926,7 @@ class Orchestrator:
         return response_text
 
     async def _process_tool_call(
-        self, session: ConversationSession, agent: Agent, tool_call: ToolCall
+        self, session: ConversationSession, agent: AgentConfig, tool_call: ToolCall
     ) -> Optional[ToolResult]:
         """Process a single tool call."""
         tool_name = tool_call.name
@@ -856,7 +954,7 @@ class Orchestrator:
             return ToolResult(success=True, data={"_message": message, "language": language})
 
         # Try routing first (handles navigation, agent entry, flow start)
-        routing_handler = await self._ensure_routing_handler()
+        routing_handler = self._ensure_routing_handler()
         routing_outcome = await routing_handler.handle_tool_routing(
             tool_name, tool_call.parameters, session, agent
         )
@@ -876,7 +974,7 @@ class Orchestrator:
             )
 
         # Not a routing tool - find and execute the tool definition
-        tool = await self._get_tool_by_name(agent, tool_name)
+        tool = self._get_tool_by_name(agent, tool_name)
 
         if tool:
             return await self.tool_executor.execute(
@@ -889,86 +987,50 @@ class Orchestrator:
         )
 
 
-    async def _get_root_agent(self) -> Optional[Agent]:
-        """Get the root orchestrator agent."""
-        result = await self.db.execute(
-            select(Agent)
-            .where(Agent.parent_agent_id.is_(None))
-            .where(Agent.is_active.is_(True))
-            .options(selectinload(Agent.tools))
-        )
-        return result.scalar_one_or_none()
+    def _get_root_agent(self) -> Optional[AgentConfig]:
+        """Get the root orchestrator agent (sync - no DB)."""
+        return get_agent_registry().get_root_agent()
 
-    async def _get_child_agent(self, parent: Agent, child_name: str) -> Optional[Agent]:
-        """Get a child agent by name or config ID - optimized with single query."""
-        from sqlalchemy import func
-
-        # Normalize name for comparison (remove hyphens, underscores, spaces)
+    def _get_child_agent(self, parent: AgentConfig, child_name: str) -> Optional[AgentConfig]:
+        """Get a child agent by name or config ID (sync - no DB)."""
+        # Normalize name for comparison
         def normalize(s: str) -> str:
             return s.lower().replace("-", "").replace("_", "").replace(" ", "")
 
         normalized_child = normalize(child_name)
 
-        # First try: Direct config_id match (most common case) using PostgreSQL JSON operators
-        result = await self.db.execute(
-            select(Agent)
-            .where(Agent.parent_agent_id == parent.id)
-            .where(Agent.is_active.is_(True))
-            .where(
-                func.lower(func.replace(func.replace(func.replace(
-                    func.json_extract_path_text(Agent.config_json, 'id'),
-                    '-', ''), '_', ''), ' ', '')) == normalized_child
-            )
-            .options(
-                selectinload(Agent.tools),
-                selectinload(Agent.subflows),
-                selectinload(Agent.response_templates),
-            )
-            .limit(1)
-        )
-        agent = result.scalar_one_or_none()
-        if agent:
-            return agent
-
-        # Fallback: Name matching (only if config_id failed)
-        result = await self.db.execute(
-            select(Agent)
-            .where(Agent.parent_agent_id == parent.id)
-            .where(Agent.is_active.is_(True))
-            .where(func.lower(Agent.name).contains(normalized_child))
-            .options(
-                selectinload(Agent.tools),
-                selectinload(Agent.subflows),
-                selectinload(Agent.response_templates),
-            )
-            .limit(1)
-        )
-        return result.scalar_one_or_none()
-
-    async def _get_tool_by_name(self, agent: Agent, tool_name: str) -> Optional[Tool]:
-        """Get a tool by name from an agent."""
-        for tool in agent.tools:
-            if tool.name == tool_name:
-                return tool
+        children = get_agent_registry().get_children(parent.config_id)
+        for child in children:
+            if normalize(child.config_id) == normalized_child:
+                return child
+            if normalized_child in normalize(child.name):
+                return child
         return None
 
-    async def _get_subflow_by_name(self, agent: Agent, flow_name: str) -> Optional[Subflow]:
-        """Get a subflow by name (legacy - kept for backward compatibility)."""
+    def _get_tool_by_name(self, agent: AgentConfig, tool_name: str) -> Optional[ToolConfig]:
+        """Get a tool by name from an agent (sync - no DB)."""
+        return agent.get_tool(tool_name)
+
+    def _get_subflow_by_name(self, agent: AgentConfig, flow_name: str) -> Optional[SubflowConfig]:
+        """Get a subflow by name (sync - no DB)."""
         for subflow in agent.subflows:
             if flow_name.lower() in subflow.name.lower():
                 return subflow
         return None
 
-    async def _ensure_routing_handler(self) -> RoutingHandler:
-        """Lazy initialization of routing handler."""
+    def _ensure_routing_handler(self) -> RoutingHandler:
+        """Lazy initialization of routing handler (sync - no DB)."""
+        tracer = getattr(self, '_current_tracer', None)
         if self.routing_handler is None:
-            registry = await get_routing_registry(self.db)
             self.routing_handler = RoutingHandler(
                 db=self.db,
-                routing_registry=registry,
                 state_manager=self.state_manager,
                 template_renderer=self.template_renderer,
+                tracer=tracer,
             )
+        elif tracer:
+            # Update tracer for existing handler (in case it changed)
+            self.routing_handler.tracer = tracer
         return self.routing_handler
 
     async def _get_user_context(self, user_id: str) -> Optional[UserContext]:
@@ -997,7 +1059,7 @@ class Orchestrator:
         user_message: str,
         assistant_message: str,
         tool_calls: List[dict],
-        agent: Agent,
+        agent: AgentConfig,
     ) -> None:
         """Record messages to the database."""
         # User message
@@ -1016,7 +1078,7 @@ class Orchestrator:
             role="assistant",
             content=assistant_message,
             msg_metadata={
-                "agentId": str(agent.id),
+                "agentId": agent.config_id,
                 "agentName": agent.name,
                 "toolsCalled": tool_calls,
                 "flowState": session.current_flow.get("currentState") if session.current_flow else None,
