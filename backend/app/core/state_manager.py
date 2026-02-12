@@ -10,8 +10,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.session import ConversationSession
-from app.models.agent import Agent
-from app.models.subflow import Subflow, SubflowState
+from app.core.agent_registry import get_agent_registry
+from app.core.config_types import AgentConfig, SubflowConfig, SubflowStateConfig
 
 logger = logging.getLogger(__name__)
 
@@ -65,16 +65,12 @@ class StateManager:
         )
         return result.scalar_one_or_none()
 
-    async def get_current_agent(self, session: ConversationSession) -> Optional[Agent]:
-        """Get the current agent from the session's agent stack."""
+    def get_current_agent(self, session: ConversationSession) -> Optional[AgentConfig]:
+        """Get the current agent from the session's agent stack (sync - no DB)."""
         agent_id = session.get_current_agent_id()
         if not agent_id:
             return None
-
-        result = await self.db.execute(
-            select(Agent).where(Agent.id == UUID(agent_id))
-        )
-        return result.scalar_one_or_none()
+        return get_agent_registry().get_agent(agent_id)
 
     async def push_agent(
         self,
@@ -197,29 +193,31 @@ class StateManager:
         logger.info(f"Session {session.session_id}: escalated - {reason}")
 
     async def enter_subflow(
-        self, session: ConversationSession, subflow: Subflow
+        self, session: ConversationSession, subflow: SubflowConfig, initial_data: dict = None
     ) -> ConversationSession:
-        """Enter a subflow."""
+        """Enter a subflow with optional initial data from tool parameters."""
         # Check if already in this flow (prevent duplicate entries)
-        if session.current_flow and session.current_flow.get("flowId") == str(subflow.id):
+        if session.current_flow and session.current_flow.get("flowId") == subflow.config_id:
             logger.warning(
-                f"Already in flow {subflow.name} (ID: {subflow.id}) - ignoring duplicate entry"
+                f"Already in flow {subflow.name} (ID: {subflow.config_id}) - ignoring duplicate entry"
             )
             return session
 
         session.current_flow = {
-            "flowId": str(subflow.id),
+            "agentId": subflow.agent_id,      # Agent config_id (for lookups)
+            "flowId": subflow.config_id,       # Subflow config_id
             "currentState": subflow.initial_state,
-            "stateData": {},
+            "stateData": initial_data or {},
             "enteredAt": datetime.utcnow().isoformat(),
         }
         logger.info(
-            f"Session {session.session_id}: entered flow {subflow.name}, state {subflow.initial_state}"
+            f"Session {session.session_id}: entered flow {subflow.name}, state {subflow.initial_state}, "
+            f"initial_data: {list((initial_data or {}).keys())}"
         )
         return session
 
     async def transition_state(
-        self, session: ConversationSession, new_state_id: str, state_def: SubflowState
+        self, session: ConversationSession, new_state_id: str, state_def: SubflowStateConfig
     ) -> ConversationSession:
         """Transition to a new state within the current flow with row-level locking."""
         # Re-fetch session with FOR UPDATE lock
@@ -312,32 +310,24 @@ class StateManager:
             return True
         return datetime.utcnow() > datetime.fromisoformat(expires_at)
 
-    async def get_subflow(self, flow_id: str) -> Optional[Subflow]:
-        """Get a subflow by ID."""
-        result = await self.db.execute(
-            select(Subflow).where(Subflow.id == UUID(flow_id))
-        )
-        return result.scalar_one_or_none()
+    def get_subflow(self, agent_id: str, subflow_id: str) -> Optional[SubflowConfig]:
+        """Get a subflow by agent and subflow config_ids (sync - no DB)."""
+        return get_agent_registry().get_subflow(agent_id, subflow_id)
 
-    async def get_flow_state(
-        self, subflow_id: str, state_id: str
-    ) -> Optional[SubflowState]:
-        """Get a specific state within a subflow."""
-        result = await self.db.execute(
-            select(SubflowState).where(
-                SubflowState.subflow_id == UUID(subflow_id),
-                SubflowState.state_id == state_id,
-            )
-        )
-        return result.scalar_one_or_none()
+    def get_flow_state(
+        self, agent_id: str, subflow_id: str, state_id: str
+    ) -> Optional[SubflowStateConfig]:
+        """Get a specific state within a subflow (sync - no DB)."""
+        return get_agent_registry().get_flow_state(agent_id, subflow_id, state_id)
 
-    async def get_current_flow_state(
+    def get_current_flow_state(
         self, session: ConversationSession
-    ) -> Optional[SubflowState]:
-        """Get the current flow state if session is in a flow."""
+    ) -> Optional[SubflowStateConfig]:
+        """Get the current flow state if session is in a flow (sync - no DB)."""
         if not session.current_flow:
             return None
-        return await self.get_flow_state(
+        return self.get_flow_state(
+            session.current_flow["agentId"],
             session.current_flow["flowId"],
             session.current_flow["currentState"],
         )

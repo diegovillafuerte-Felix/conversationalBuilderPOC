@@ -1,28 +1,29 @@
-# Felix Conversational Orchestrator - Architecture Guide
+# Conversational Orchestrator Service (COS) - Architecture Guide
 
-> A deep dive into how Felix works, designed for anyone curious about conversational AI systems.
+> A deep dive into how COS works, designed for anyone curious about conversational AI systems.
 
 ---
 
 ## Table of Contents
 
-1. [What is Felix?](#what-is-felix)
+1. [What is COS?](#what-is-cos)
 2. [The Big Picture](#the-big-picture)
 3. [Core Concepts](#core-concepts)
-4. [How a Message Flows Through the System](#how-a-message-flows-through-the-system)
-5. [The Agent Hierarchy](#the-agent-hierarchy)
-6. [Tools: How Agents Take Action](#tools-how-agents-take-action)
-7. [Subflows: Multi-Step Conversations](#subflows-multi-step-conversations)
-8. [The Shadow Service: Contextual Intelligence](#the-shadow-service-contextual-intelligence)
-9. [State Management: Remembering Context](#state-management-remembering-context)
-10. [Why This Architecture?](#why-this-architecture)
-11. [Technical Reference](#technical-reference)
+4. [Ownership Model](#ownership-model)
+5. [How a Message Flows Through the System](#how-a-message-flows-through-the-system)
+6. [The Agent Hierarchy](#the-agent-hierarchy)
+7. [Tools: How Agents Take Action](#tools-how-agents-take-action)
+8. [Subflows: Multi-Step Conversations](#subflows-multi-step-conversations)
+9. [The Shadow Service: Contextual Intelligence](#the-shadow-service-contextual-intelligence)
+10. [State Management: Remembering Context](#state-management-remembering-context)
+11. [Why This Architecture?](#why-this-architecture)
+12. [Technical Reference](#technical-reference)
 
 ---
 
-## What is Felix?
+## What is COS?
 
-Felix is a **conversational AI assistant** that helps users with financial services like:
+The **Conversational Orchestrator Service (COS)** is a conversational AI platform that helps users with financial services like:
 
 - Sending money to family abroad (remittances)
 - Topping up mobile phones
@@ -33,12 +34,12 @@ Instead of clicking through menus, users simply chat naturally:
 
 ```
 User: "I want to send $200 to my mom in Mexico"
-Felix: "I'd be happy to help you send money to Mexico!
-        I see you have Maria Garcia saved as a recipient.
-        Would you like to send to her?"
+Assistant: "I'd be happy to help you send money to Mexico!
+            I see you have Maria Garcia saved as a recipient.
+            Would you like to send to her?"
 ```
 
-**What makes Felix special:**
+**What makes COS special:**
 
 - **Natural conversation** - No rigid menus or forms
 - **Smart routing** - Automatically connects you to the right specialist
@@ -50,11 +51,11 @@ Felix: "I'd be happy to help you send money to Mexico!
 
 ## The Big Picture
 
-At its core, Felix is a **multi-agent system** where specialized AI agents collaborate to help users. Think of it like a company with different departments:
+At its core, COS is a **multi-agent system** where specialized AI agents collaborate to help users. Think of it like a company with different departments:
 
 ```
                             ┌─────────────────────────────────────┐
-                            │           Felix (Main)              │
+                            │          Root Agent (Main)          │
                             │      "How can I help today?"        │
                             └─────────────┬───────────────────────┘
                                           │
@@ -72,7 +73,7 @@ At its core, Felix is a **multi-agent system** where specialized AI agents colla
 ```
 
 **Each agent is a specialist:**
-- The main Felix agent is the "receptionist" who understands what you need
+- The **Root Agent** is the "receptionist" who understands what you need and routes to specialists
 - Specialized agents handle specific domains with deep expertise
 - Agents can hand off to each other seamlessly
 - Financial Advisor is a **shadow agent** that activates when users need budgeting/savings help
@@ -114,9 +115,47 @@ A parallel system that watches the conversation and can inject helpful tips or p
 
 ---
 
+## Ownership Model
+
+A critical principle of this architecture is **distributed ownership with clear boundaries**. Product teams own not just their backend services, but also the conversational experience for their product—without needing to touch platform code.
+
+### How Ownership Works
+
+Each product has an **agent configuration**—a JSON file that defines:
+- The agent's personality and instructions
+- What tools (actions) the agent can use
+- Multi-step flows and their states
+- Response templates for common scenarios
+
+These configuration files live in a **central repository** (`backend/app/config/agents/`). A configuration management system handles permissions and approval flows—ensuring teams can only modify their own agents while preventing conflicting changes.
+
+### Ownership Boundaries
+
+| Team | Owns | Cannot Touch |
+|------|------|--------------|
+| Platform | Orchestration infrastructure, root agent config, routing logic | Product-specific agent configs |
+| Chat (Remittances) | Remittances agent config, remittances service | Credit, Wallet, other agent configs |
+| Credit | Credit agent config, credit service | Remittances, Wallet, other agent configs |
+| Wallet | Wallet service (no dedicated agent) | Agent configs |
+| New Products | Top-ups/Bill Pay/P2P agent configs and services | Other agent configs |
+
+### Agent Isolation
+
+**Agent isolation is enforced by design.** Each agent is completely ignorant of every other agent. A product agent cannot directly call another product's service or reference another agent's flows. The only way to interact across boundaries is through the tools explicitly assigned to that agent—and those tools are the API contract negotiated between teams.
+
+For example, the Credit agent might have a `disburse_via_remittance` tool that calls the remittances service. But the Credit agent doesn't know how remittances work internally—it just calls a tool and gets a result. If the Chat team changes how remittances are processed, the Credit agent is unaffected as long as the tool contract holds.
+
+This means:
+- **Product teams control their user experience** within the bounds of the routing architecture
+- **Changes are isolated**—modifying the credit flow cannot break remittances
+- **The Platform team focuses on infrastructure**, not product-specific conversations
+- **Approval flows prevent chaos** while enabling autonomy
+
+---
+
 ## How a Message Flows Through the System
 
-When you send a message to Felix, here's what happens behind the scenes. The system uses a **Routing Chain Architecture** that loops until reaching a "stable state" - eliminating extra turns when routing between agents.
+When you send a message to COS, here's what happens behind the scenes. The system uses a **Routing Chain Architecture** that loops until reaching a "stable state" - eliminating extra turns when routing between agents.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -218,7 +257,7 @@ When you send a message to Felix, here's what happens behind the scenes. The sys
     ─────────────────────────────────────────────────────────────────
     Note: User asked "Quiero una recarga" and received the TopUps
     response directly - NO extra turn required! The chain handled:
-    Iteration 1: Felix → enter_topups (routing)
+    Iteration 1: Root → enter_topups (routing)
     Iteration 2: TopUps → start_flow_recarga (routing)
     Iteration 3: TopUps flow → shows numbers (stable - no routing)
 ```
@@ -231,7 +270,7 @@ The old architecture required extra user messages after routing:
 ```
 Old behavior (defect):                New behavior (routing chain):
 User: "Quiero recarga"               User: "Quiero recarga"
-Felix: "Te conecto con recargas"     TopUps: "Veo tus números: 1.Mamá..."
+Root: "Te conecto con recargas"      TopUps: "Veo tus números: 1.Mamá..."
 User: (sends any message)            (Single response!)
 TopUps: "Veo tus números: 1.Mamá..."
 ```
@@ -267,19 +306,23 @@ Services are **independently deployed** and communicate via HTTP:
 - Backend (port 8000) ←→ Services Gateway (port 8001)
 - Enables independent scaling and deployment
 - Same API can be used by web app, mobile app, etc.
+- **Services return raw data only**—no formatted messages, no user-facing text
+- Presentation layer (LLM or templates) handles all formatting
+- This enables multi-channel support and team independence
 
 ---
 
 ## The Agent Hierarchy
 
-Agents are organized in a tree structure. This provides:
+Agents are organized in a tree structure with strict isolation boundaries. This provides:
 
-1. **Clear responsibility** - Each agent knows its domain
+1. **Clear responsibility** - Each agent knows its domain and nothing else
 2. **Seamless handoffs** - Users move between agents naturally
-3. **Scoped tools** - Each agent only sees relevant tools
+3. **Scoped tools** - Each agent only sees its own tools (never another agent's)
+4. **Team ownership** - Each product team owns their agent's configuration
 
 ```
-                    Felix (Root Agent)
+                    Root Agent (Main)
                     ├── Can escalate to human
                     └── Routes to specialists
                             │
@@ -290,7 +333,7 @@ Agents are organized in a tree structure. This provides:
    ├── 17 tools         ├── 8 tools        ├── 6 tools        ├── 12 tools
    ├── 3 subflows       ├── 1 subflow      ├── 1 subflow      ├── 1 subflow
    └── Can go back      └── Can go back    └── Can go back    └── Can go back
-       to Felix             to Felix            to Felix           to Felix
+       to Root              to Root             to Root            to Root
 
                             │
                             │ (Shadow Service)
@@ -305,20 +348,22 @@ Agents are organized in a tree structure. This provides:
 
 ```
 User: "I want to send money"
-Felix: "I'll connect you with our remittances specialist."
-       [Felix switches to Remittances Agent]
+Root: "I'll connect you with our remittances specialist."
+      [Root switches to Remittances Agent]
 
 User: "Actually, nevermind. I want to apply for credit."
-Remittances: "No problem! Let me take you back to Felix
-              who can help with credit."
-             [Returns to Felix, then to SNPL Agent]
+Remittances: "No problem! Let me take you back to the main menu
+              to help with credit."
+             [Returns to Root, then to SNPL Agent]
 ```
 
 ### Agent Configuration
 
-Each agent is configured through JSON files:
+Each agent is configured through JSON files **owned by the respective product team**. The Platform team owns only the root agent. This separation ensures teams can iterate on their conversational experience independently.
 
 ```json
+// File: config/agents/remittances.json
+// Owner: Chat (Remittances) Team
 {
   "id": "remittances",
   "name": "Remittances Agent",
@@ -330,20 +375,23 @@ Each agent is configured through JSON files:
   },
 
   "navigation": {
-    "canGoUp": true,      // Can return to parent (Felix)
-    "canGoHome": true,    // Can jump straight to Felix
+    "canGoUp": true,      // Can return to parent (Root)
+    "canGoHome": true,    // Can jump straight to Root
     "canEscalate": true   // Can transfer to human agent
   },
 
   "tools": [
-    // Tools defined here...
+    // Tools defined here - these are the ONLY actions this agent can take
+    // The agent cannot see or call tools from other agents
   ],
 
   "subflows": [
-    // Multi-step flows defined here...
+    // Multi-step flows defined here - isolated to this agent
   ]
 }
 ```
+
+> **Note on Isolation:** An agent's tools list defines its entire capability boundary. The remittances agent cannot call credit tools, cannot reference top-ups flows, and has no awareness that other agents exist. Cross-product functionality (like credit disbursement via remittance) is exposed through explicitly defined tools that call services via HTTP.
 
 ---
 
@@ -404,20 +452,20 @@ Tools are the "verbs" of the system - they let agents do things beyond just talk
 
 ### Confirmation Flow
 
-For sensitive actions, Felix always asks for confirmation:
+For sensitive actions, COS always asks for confirmation:
 
 ```
 User: "Send $500 to Maria"
 
-Felix: "I'm about to send $500 USD to Maria Garcia in Mexico.
-        She'll receive 8,725 MXN via bank deposit.
+Remittances: "I'm about to send $500 USD to Maria Garcia in Mexico.
+              She'll receive 8,725 MXN via bank deposit.
 
-        Please confirm: Should I proceed with this transfer?"
+              Please confirm: Should I proceed with this transfer?"
 
 User: "Yes, go ahead"
 
-Felix: "Transfer complete! Maria will receive the funds
-        within 1-2 business days. Reference: TXN-123456"
+Remittances: "Transfer complete! Maria will receive the funds
+              within 1-2 business days. Reference: TXN-123456"
 ```
 
 ---
@@ -539,7 +587,7 @@ The Shadow Service runs **in parallel** with every conversation, looking for opp
     ┌─────────────────────────────────────────────────┐
     │              Combined Response                  │
     │                                                 │
-    │ Felix: "I'll send $200 to Maria in Mexico.     │
+    │ Agent: "I'll send $200 to Maria in Mexico.     │
     │         She'll receive 3,490 MXN."             │
     │                                                 │
     │ 💡 Tip: "Did you know? Sending $50 more        │
@@ -583,7 +631,7 @@ The Shadow Service operates in two modes:
 **1. Tip Mode** - Adds a helpful message without changing the flow:
 ```
 User: "How much did I send last month?"
-Felix: "Last month you sent a total of $450 across 3 transfers."
+Agent: "Last month you sent a total of $450 across 3 transfers."
 💡 Tip: "You're close to our Gold tier! Two more transfers
         this month unlocks 0.5% better rates."
 ```
@@ -591,7 +639,7 @@ Felix: "Last month you sent a total of $450 across 3 transfers."
 **2. Activation Mode** - Takes over the conversation when relevant:
 ```
 User: "I'm worried about my spending habits"
-Felix: "I understand financial wellness is important to you.
+Agent: "I understand financial wellness is important to you.
         Let me connect you with our Financial Advisor who
         specializes in budgeting and savings strategies."
         [Switches to Financial Advisor agent]
@@ -635,7 +683,7 @@ Every conversation maintains state across multiple dimensions:
       "entry_reason": "User wanted to send money"
     },
     {
-      "agent_id": "felix",           ◀─── Previous (can go back)
+      "agent_id": "root",           ◀─── Previous (can go back)
       "entered_at": "2024-01-15T10:28:00Z",
       "entry_reason": "Session start"
     }
@@ -673,11 +721,11 @@ Every conversation maintains state across multiple dimensions:
 The agent stack works like browser history - you can go back:
 
 ```
-Start: [Felix]
-"I want to send money" → [Felix, Remittances]
-"Actually, I need credit" → [Felix, Remittances, SNPL]
-"Go back" → [Felix, Remittances]
-"Go home" → [Felix]
+Start: [Root]
+"I want to send money" → [Root, Remittances]
+"Actually, I need credit" → [Root, Remittances, SNPL]
+"Go back" → [Root, Remittances]
+"Go home" → [Root]
 ```
 
 ### Preserving Flow State
@@ -699,7 +747,7 @@ When the Shadow Service activates, your flow state is preserved:
 
 ## Why This Architecture?
 
-Every architectural decision solves a specific problem:
+This architecture is designed to enable **multi-product development with independent teams**. Every architectural decision solves a specific problem while supporting team autonomy and fast iteration:
 
 ### Problem 1: Conversations Get Messy
 
@@ -744,7 +792,7 @@ Messages 81-100: [Full verbatim messages]
 ### Problem 3: Extra Turns After Routing
 
 **Challenge:** The intermediate architecture (with `state_changed` flag but no loop) required extra user messages after routing:
-- User says "Quiero recarga" → Felix responds "Te conecto..."
+- User says "Quiero recarga" → Root responds "Te conecto..."
 - User must send another message → TopUps finally responds with actual content
 - This felt broken to users
 
@@ -758,9 +806,9 @@ Messages 81-100: [Full verbatim messages]
 ```
 Old (extra turn):                    New (routing chain):
 User: "Quiero recarga"              User: "Quiero recarga"
-Felix: "Te conecto..."              ─────────────────────────────
+Root: "Te conecto..."               ─────────────────────────────
 (User must send another msg)        │ Chain iteration 1:        │
-TopUps: "Veo tus números..."        │  Felix → enter_topups     │
+TopUps: "Veo tus números..."        │  Root → enter_topups      │
                                     │ Chain iteration 2:        │
                                     │  TopUps → start_flow      │
                                     │ Chain iteration 3:        │
@@ -816,16 +864,16 @@ def get_exchange_rate(from_currency, to_currency):
 **Challenge:** Agent behaviors defined in code are hard to modify.
 
 **Solution:** Configuration-Driven Design
-- Agents, tools, flows defined in JSON
-- Admin API for runtime modifications
-- Database stores runtime state
+- Agents, tools, flows defined in JSON (not database, not code)
+- Each product team owns their agent's JSON config file
+- Platform team owns orchestration code
 - Code is generic; configuration is specific
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                Configuration vs. Code                       │
 ├─────────────────────────────────────────────────────────────┤
-│  CONFIGURATION (JSON/DB)     │  CODE (Python)              │
+│  CONFIGURATION (JSON files)  │  CODE (Python)              │
 │  ─────────────────────────   │  ─────────────────────────  │
 │  • Agent personalities       │  • Orchestration logic      │
 │  • Tool definitions          │  • State management         │
@@ -834,8 +882,44 @@ def get_exchange_rate(from_currency, to_currency):
 │  • System prompts            │  • HTTP handling            │
 │                              │                             │
 │  "What" and "Who"            │  "How"                      │
+│  (Owned by product teams)    │  (Owned by platform team)   │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+### Problem 7: Teams Cannot Work Independently
+
+**Challenge:** In a monolithic system, changes to one product affect others. Teams must coordinate constantly, slowing everyone down.
+
+**Solution:** Service-Oriented Architecture with Clear Boundaries
+- Each product team owns their service (business logic) AND their agent config (conversation experience)
+- Services communicate via HTTP/REST—no shared code
+- Agent configs are isolated—one team's changes cannot break another's
+- The orchestration layer is generic—it routes and executes, but product-specific logic lives in configs
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        TEAM INDEPENDENCE MODEL                               │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│   PLATFORM TEAM                      PRODUCT TEAMS                          │
+│   ─────────────────                  ─────────────────                      │
+│   • Orchestration code               • Agent JSON configs                   │
+│   • Routing logic                    • Service implementations              │
+│   • LLM integration                  • Tool definitions                     │
+│   • Root agent config                • Flow states & transitions            │
+│   • Shadow service infra             • Response templates                   │
+│                                                                              │
+│   Ships: Platform releases           Ships: Independently per product       │
+│   Coordinates: API contracts only    Coordinates: API contracts only        │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+Adding a new product requires:
+1. Create a service with business logic (product team)
+2. Create an agent JSON config (product team)
+3. Define tools that call the service (API contract with platform team)
+4. Deploy independently
 
 ---
 
@@ -931,14 +1015,29 @@ def get_exchange_rate(from_currency, to_currency):
                                  ▼
 ┌────────────────────────────────────────────────────────────────────────────┐
 │                            DATA LAYER                                      │
+│                                                                            │
 │  ┌─────────────────────────────────────────────────────────────────────┐  │
-│  │                        PostgreSQL Database                           │  │
-│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐  │  │
-│  │  │  Agent   │ │   Tool   │ │ Subflow  │ │ Session  │ │ Message  │  │  │
-│  │  │          │ │          │ │          │ │          │ │          │  │  │
-│  │  │ Hierarchy│ │ Actions  │ │ States & │ │ User     │ │ History  │  │  │
-│  │  │ & config │ │ & params │ │ transitions│ │ state    │ │          │  │  │
-│  │  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘  │  │
+│  │                   JSON Configuration (config/agents/)               │  │
+│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐                            │  │
+│  │  │  Agent   │ │   Tool   │ │ Subflow  │  Loaded at startup into    │  │
+│  │  │  Configs │ │  Configs │ │  Configs │  in-memory AgentRegistry   │  │
+│  │  │          │ │          │ │          │                            │  │
+│  │  │ Owned by │ │ Defined  │ │ States & │  No database persistence   │  │
+│  │  │ product  │ │ per agent│ │transitions│  for agent configurations  │  │
+│  │  │ teams    │ │          │ │          │                            │  │
+│  │  └──────────┘ └──────────┘ └──────────┘                            │  │
+│  └─────────────────────────────────────────────────────────────────────┘  │
+│                                                                            │
+│  ┌─────────────────────────────────────────────────────────────────────┐  │
+│  │                      PostgreSQL Database                            │  │
+│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐                            │  │
+│  │  │ Session  │ │ Message  │ │   User   │  Runtime state only        │  │
+│  │  │          │ │          │ │          │                            │  │
+│  │  │ Agent    │ │ History  │ │ Profile  │  No agent/tool/subflow     │  │
+│  │  │ stack,   │ │ & context│ │ & prefs  │  definitions stored here   │  │
+│  │  │ flow     │ │          │ │          │                            │  │
+│  │  │ state    │ │          │ │          │                            │  │
+│  │  └──────────┘ └──────────┘ └──────────┘                            │  │
 │  └─────────────────────────────────────────────────────────────────────┘  │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -957,7 +1056,9 @@ conversationalBuilderPOC/
 │   │   │   ├── tool_executor.py     # Runs tools via HTTP to Services Gateway
 │   │   │   ├── routing.py           # Routing types and data classes
 │   │   │   ├── routing_handler.py   # Returns state_changed (no recursion)
-│   │   │   ├── routing_registry.py  # Startup validation
+│   │   │   ├── agent_registry.py    # In-memory config registry with startup validation
+│   │   │   ├── config_types.py      # Dataclasses for agent/tool/subflow configs
+│   │   │   ├── event_trace.py       # Event tracing for debugging
 │   │   │   ├── shadow_service.py    # Parallel contextual tips
 │   │   │   ├── llm_client.py        # OpenAI API wrapper
 │   │   │   └── i18n.py              # Language directive injection
@@ -966,21 +1067,26 @@ conversationalBuilderPOC/
 │   │   │   ├── service_client.py    # Async HTTP client for Services Gateway
 │   │   │   └── service_mapping.py   # Tool name → endpoint mapping
 │   │   │
-│   │   ├── models/                  # Database models
-│   │   │   ├── agent.py             # Agent, Tool, ResponseTemplate
+│   │   ├── models/                  # Database models (session/user data only)
 │   │   │   ├── session.py           # ConversationSession
-│   │   │   ├── conversation.py      # ConversationMessage
-│   │   │   ├── subflow.py           # Subflow, SubflowState
+│   │   │   ├── conversation.py      # ConversationMessage, ConversationHistoryCompacted
 │   │   │   └── user.py              # UserContext
+│   │   │   # Note: Agent/Tool/Subflow configs moved to JSON (config/agents/)
 │   │   │
 │   │   ├── routes/                  # API endpoints
 │   │   │   ├── chat.py              # Chat API
 │   │   │   └── admin.py             # Admin CRUD
 │   │   │
 │   │   ├── config/                  # JSON configurations (English only)
-│   │   │   ├── agents/              # Agent definitions (felix, remittances, topups, snpl, billpay, financial_advisor)
-│   │   │   ├── prompts/             # System prompts (base_system.json, sections.json)
-│   │   │   ├── shadow_service.json  # Shadow service config
+│   │   │   ├── agents/              # Agent definitions - OWNED BY PRODUCT TEAMS
+│   │   │   │   ├── felix.json       # Root agent (Platform team)
+│   │   │   │   ├── remittances.json # Chat/Remittances team
+│   │   │   │   ├── topups.json      # New Products team
+│   │   │   │   ├── snpl.json        # Credit team
+│   │   │   │   ├── billpay.json     # New Products team
+│   │   │   │   └── financial_advisor.json  # Platform team (shadow)
+│   │   │   ├── prompts/             # System prompts (Platform team)
+│   │   │   ├── shadow_service.json  # Shadow service config (Platform team)
 │   │   │   └── confirmation_templates.json  # Financial transaction confirmations
 │   │   │
 │   │   └── main.py                  # FastAPI entry point
@@ -1013,8 +1119,15 @@ conversationalBuilderPOC/
 │
 ├── frontend/
 │   ├── chat/                        # Simple vanilla JS chat UI
-│   ├── admin/                       # Admin interface
+│   ├── admin/                       # Simple vanilla JS admin UI
 │   └── react-app/                   # React application
+│       ├── src/components/
+│       │   ├── chat/                # Chat UI (ChatContainer, DebugPanel, EventTracePanel, etc.)
+│       │   ├── visualize/           # Agent/flow visualization (HierarchyDiagram, StateMachineDiagram)
+│       │   └── admin/               # Admin layout (simplified)
+│       ├── src/pages/               # ChatPage, AdminPage
+│       ├── src/store/               # Zustand stores (chatStore, visualizeStore)
+│       └── src/services/            # API clients (chatApi, adminApi)
 │
 └── docker-compose.yml               # PostgreSQL + Redis + Backend + Services
 ```
@@ -1030,7 +1143,9 @@ conversationalBuilderPOC/
 | Manage session state | `backend/app/core/state_manager.py` |
 | Execute tool calls via HTTP | `backend/app/core/tool_executor.py` |
 | Handle routing (state_changed) | `backend/app/core/routing_handler.py` |
-| Validate routes at startup | `backend/app/core/routing_registry.py` |
+| In-memory config registry | `backend/app/core/agent_registry.py` |
+| Config dataclasses | `backend/app/core/config_types.py` |
+| Event tracing for debugging | `backend/app/core/event_trace.py` |
 | Shadow contextual tips | `backend/app/core/shadow_service.py` |
 | HTTP client for services | `backend/app/clients/service_client.py` |
 | Tool → endpoint mapping | `backend/app/clients/service_mapping.py` |
@@ -1041,14 +1156,14 @@ conversationalBuilderPOC/
 
 ### Current Agent Configurations
 
-| Agent | File | Description |
-|-------|------|-------------|
-| Felix | `felix.json` | Root orchestrator - routes to specialists |
-| Remittances | `remittances.json` | International money transfers (17 tools, 3 subflows) |
-| Top-Ups | `topups.json` | Mobile phone recharges (8 tools, 1 subflow) |
-| Bill Pay | `billpay.json` | Bill payments (6 tools, 1 subflow) |
-| SNPL | `snpl.json` | Send Now Pay Later credit (12 tools, 1 subflow) |
-| Financial Advisor | `financial_advisor.json` | Shadow agent for budgeting/savings |
+| Agent | File | Owner | Description |
+|-------|------|-------|-------------|
+| Root | `felix.json` | Platform | Root orchestrator - routes to specialists |
+| Remittances | `remittances.json` | Chat Team | International money transfers (17 tools, 3 subflows) |
+| Top-Ups | `topups.json` | New Products | Mobile phone recharges (8 tools, 1 subflow) |
+| Bill Pay | `billpay.json` | New Products | Bill payments (6 tools, 1 subflow) |
+| SNPL | `snpl.json` | Credit Team | Send Now Pay Later credit (12 tools, 1 subflow) |
+| Financial Advisor | `financial_advisor.json` | Platform | Shadow agent for budgeting/savings |
 
 ---
 
@@ -1092,7 +1207,7 @@ StateManager.get_or_create_session()
   "message_count": 0,
   "agent_stack": [
     {
-      "agent_id": "felix",
+      "agent_id": "root",
       "entered_at": "2026-01-12T10:00:00Z",
       "entry_reason": "Session start"
     }
@@ -1106,8 +1221,8 @@ StateManager.get_or_create_session()
 ```
 ContextAssembler builds system prompt:
 ├── Base system prompt (English)
-├── Felix agent description
-├── Felix's tools: [enter_remittances, enter_credit,
+├── Root agent description
+├── Root agent's tools: [enter_remittances, enter_credit,
 │                   enter_topups, change_language]
 ├── User profile: "Carlos Martinez, Spanish speaker"
 ├── Conversation history: (empty - first message)
@@ -1120,7 +1235,7 @@ ContextAssembler builds system prompt:
 │        Main LLM             │    │      Shadow Service         │
 │                             │    │                             │
 │  Input: "Hola"              │    │  Evaluates context...       │
-│  Context: Felix agent       │    │  Financial Advisor: 5%      │
+│  Context: Root agent        │    │  Financial Advisor: 5%      │
 │                             │    │  Campaigns: 10%             │
 │  Decision: Simple greeting  │    │  → Below thresholds         │
 │  → No tool calls needed     │    │  → No messages to inject    │
@@ -1131,7 +1246,7 @@ ContextAssembler builds system prompt:
 **Step 5: Response Generated**
 ```
 LLM Response:
-  message: "¡Hola! Soy Felix, tu asistente financiero. ¿En qué puedo ayudarte hoy?
+  message: "¡Hola! Soy tu asistente financiero. ¿En qué puedo ayudarte hoy?
             Puedo ayudarte con remesas, recargas de celular, pago de servicios,
             crédito o tu cartera."
   tool_calls: []
@@ -1142,14 +1257,14 @@ LLM Response:
 ┌─────────────────────────────────────────────────────────────┐
 │  AGENT STACK          │  CURRENT FLOW     │  CONFIRMATION   │
 │  ─────────────────    │  ─────────────    │  ─────────────  │
-│  [Felix]              │  None             │  None           │
+│  [Root]              │  None             │  None           │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ```
-FELIX: "¡Hola! Soy Felix, tu asistente financiero. ¿En qué puedo ayudarte hoy?
-        Puedo ayudarte con remesas, recargas de celular, pago de servicios,
-        crédito o tu cartera."
+ASSISTANT: "¡Hola! Soy tu asistente financiero. ¿En qué puedo ayudarte hoy?
+            Puedo ayudarte con remesas, recargas de celular, pago de servicios,
+            crédito o tu cartera."
 ```
 
 ---
@@ -1166,7 +1281,7 @@ USER: "Quiero una recarga"
 ```
 StateManager.get_or_create_session(session_id="sess_001")
 → Existing session loaded
-→ Current agent: Felix
+→ Current agent: Root
 → No active flow
 ```
 
@@ -1176,13 +1291,13 @@ The routing chain will loop until reaching a stable state (no routing tools call
 
 ```
 ╔═══════════════════════════════════════════════════════════════════════════╗
-║                     CHAIN ITERATION 1: Felix Agent                        ║
+║                     CHAIN ITERATION 1: Root Agent                         ║
 ╠═══════════════════════════════════════════════════════════════════════════╣
 ║                                                                           ║
 ║  Context Assembly:                                                        ║
-║  ├── Felix agent description                                              ║
-║  ├── Felix system_prompt_addition: "DELEGATION RULES..."                  ║
-║  ├── Felix's tools (6 tools)                                              ║
+║  ├── Root agent description                                               ║
+║  ├── Root system_prompt_addition: "DELEGATION RULES..."                   ║
+║  ├── Root agent's tools (6 tools)                                         ║
 ║  └── Language directive: "Respond in Spanish"                             ║
 ║                                                                           ║
 ║  LLM Decision:                                                            ║
@@ -1253,7 +1368,7 @@ After 3 iterations, the chain reached stable state. The user receives the TopUps
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │  AGENT STACK              │  CURRENT FLOW              │  CONFIRMATION      │
 │  ─────────────────────    │  ────────────────────────  │  ─────────────     │
-│  [Felix, TopUps]          │  flow_id: "recarga"        │  None              │
+│  [Root,TopUps]          │  flow_id: "recarga"        │  None              │
 │       ▲                   │  current_state:            │                    │
 │       └── active          │    "collect_number"        │                    │
 │                           │  state_data: {}            │                    │
@@ -1292,7 +1407,7 @@ USER: "+52 55 9999 8888"
 **Step 1: Session Loaded**
 ```
 Current state:
-├── Agent stack: [Felix, TopUps]
+├── Agent stack: [Root,TopUps]
 ├── Current agent: TopUps
 ├── Current flow: recarga @ collect_number
 └── Flow data: {}
@@ -1367,7 +1482,7 @@ StateManager.transition_state(session, "select_amount")
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │  AGENT STACK              │  CURRENT FLOW              │  CONFIRMATION      │
 │  ─────────────────────    │  ────────────────────────  │  ─────────────     │
-│  [Felix, TopUps]          │  flow_id: "recarga"        │  None              │
+│  [Root,TopUps]          │  flow_id: "recarga"        │  None              │
 │       ▲                   │  current_state:            │                    │
 │       └── active          │    "select_amount"         │                    │
 │                           │  state_data:               │                    │
@@ -1413,7 +1528,7 @@ LLM analyzes: "Sabes qué, mejor no. Quiero un crédito"
 → User is explicitly abandoning current flow
 → User wants credit (different agent domain)
 → Top-Ups agent has navigation.canGoUp = true
-→ Should use go_home to exit and let Felix route to credit
+→ Should use go_home to exit and let Root agent route to credit
 ```
 
 **Step 3: Navigation Tool Called**
@@ -1425,7 +1540,7 @@ LLM analyzes: "Sabes qué, mejor no. Quiero un crédito"
       "parameters": {}
     }
   ],
-  "message": "¡Sin problema! Regresamos con Felix para ayudarte con el crédito."
+  "message": "¡Sin problema! Te ayudo con el crédito."
 }
 ```
 
@@ -1437,7 +1552,7 @@ RoutingHandler.handle_tool_routing("go_home")
 2. Execute:
    StateManager.go_home(session)
    → Clears current_flow (recarga flow abandoned)
-   → Resets agent_stack to just [Felix]
+   → Resets agent_stack to just [Root]
 
 3. Return RoutingOutcome:
    → handled: true
@@ -1449,17 +1564,17 @@ RoutingHandler.handle_tool_routing("go_home")
 ```
 Orchestrator sees state_changed=true
 → Does NOT recurse
-→ Felix will handle the credit request on the SAME message
-→ Since go_home clears to Felix, the LLM is called again with Felix context
+→ Root agent will handle the credit request on the SAME message
+→ Since go_home clears to Root, the LLM is called again with Root agent context
 ```
 
-**Step 6: Felix Routes to Credit Agent (Same Turn)**
+**Step 6: Root Agent Routes to Credit Agent (Same Turn)**
 ```
-Felix LLM analyzes: "Sabes qué, mejor no. Quiero un crédito"
+Root agent LLM analyzes: "Sabes qué, mejor no. Quiero un crédito"
 → Delegation rules say: use enter_credit IMMEDIATELY
 → Tool call: enter_credit
 → RoutingHandler sets state_changed=true
-→ Agent stack becomes [Felix, SNPL]
+→ Agent stack becomes [Root,SNPL]
 ```
 
 **Step 7: Response to User**
@@ -1499,7 +1614,7 @@ Data stored in stateData, available to LLM immediately
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │  AGENT STACK              │  CURRENT FLOW              │  CONFIRMATION      │
 │  ─────────────────────    │  ────────────────────────  │  ─────────────     │
-│  [Felix, SNPL]            │  flow_id: "apply_snpl_flow"│  None              │
+│  [Root,SNPL]            │  flow_id: "apply_snpl_flow"│  None              │
 │       ▲                   │  current_state:            │                    │
 │       └── active          │    "check_eligibility"     │                    │
 │                           │  state_data:               │                    │
@@ -1552,7 +1667,7 @@ SNPL agent sees: User wants to send money to mom
       "parameters": {}
     }
   ],
-  "message": "¡Entendido! Te regreso con Felix para ayudarte con la remesa."
+  "message": "¡Entendido! Te ayudo con la remesa."
 }
 ```
 
@@ -1561,17 +1676,17 @@ SNPL agent sees: User wants to send money to mom
 RoutingHandler.handle_tool_routing("go_home")
 → StateManager.go_home(session)
 → Clears apply_snpl_flow (abandoned)
-→ Resets stack to [Felix]
+→ Resets stack to [Root]
 → Returns state_changed: true (no recursion)
 ```
 
-**Step 4: Felix Routes to Remittances (Same Turn)**
+**Step 4: Root Agent Routes to Remittances (Same Turn)**
 ```
-Felix LLM: User wants to send money to mom
+Root agent LLM: User wants to send money to mom
 → Delegation: enter_remittances IMMEDIATELY
 → Tool: enter_remittances
 → RoutingHandler sets state_changed: true
-→ Agent stack becomes [Felix, Remittances]
+→ Agent stack becomes [Root,Remittances]
 ```
 
 **Step 5: Response to User**
@@ -1621,7 +1736,7 @@ Data stored in stateData, available to LLM in "Available Context Data"
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │  AGENT STACK              │  CURRENT FLOW              │  CONFIRMATION      │
 │  ─────────────────────    │  ────────────────────────  │  ─────────────     │
-│  [Felix, Remittances]     │  flow_id: "send_money_flow"│  None              │
+│  [Root,Remittances]     │  flow_id: "send_money_flow"│  None              │
 │          ▲                │  current_state:            │                    │
 │          └── active       │    "select_recipient"      │                    │
 │                           │  state_data: {}            │                    │
@@ -1939,7 +2054,7 @@ ToolExecutor.execute("create_transfer", params)
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │  AGENT STACK              │  CURRENT FLOW              │  CONFIRMATION      │
 │  ─────────────────────    │  ────────────────────────  │  ─────────────     │
-│  [Felix, Remittances]     │  flow_id: "send_money_flow"│  PENDING           │
+│  [Root,Remittances]     │  flow_id: "send_money_flow"│  PENDING           │
 │          ▲                │  current_state:            │                    │
 │          └── active       │    "review_summary"        │  tool_name:        │
 │                           │                            │  "create_transfer" │
@@ -2040,7 +2155,7 @@ LLM enhances with transaction details
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │  AGENT STACK              │  CURRENT FLOW              │  CONFIRMATION      │
 │  ─────────────────────    │  ────────────────────────  │  ─────────────     │
-│  [Felix, Remittances]     │  None                      │  None              │
+│  [Root,Remittances]     │  None                      │  None              │
 │          ▲                │  (cleared - flow complete) │  (cleared)         │
 │          └── active       │                            │                    │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -2078,23 +2193,23 @@ This conversation demonstrated every major architectural component:
 
 Turn  │ User Said             │ Agent Stack          │ Flow State        │ Chain Iters
 ──────┼───────────────────────┼──────────────────────┼───────────────────┼───────────
-  1   │ "Hola"                │ [Felix]              │ None              │ 1 (stable)
-  2   │ "Quiero recarga"      │ [Felix, TopUps]      │ recarga@collect   │ 3 (routed)
-  3   │ "+52 55 9999 8888"    │ [Felix, TopUps]      │ recarga@select_amt│ 1 (stable)
-  4   │ "Mejor un crédito"    │ [Felix, SNPL]        │ apply_snpl@elig   │ 3 (routed)
-  5   │ "Mejor enviar dinero" │ [Felix, Remittances] │ send_money@recip  │ 3 (routed)
-  6   │ "A mi mamá"           │ [Felix, Remittances] │ send_money@amt    │ 1 (stable)
-  7   │ "200 dólares"         │ [Felix, Remittances] │ send_money@dlvr   │ 1 (stable)
-  8   │ "Por banco"           │ [Felix, Remittances] │ send_money@review │ 1 (stable)
-  9   │ "Sí, confirmo"        │ [Felix, Remittances] │ review + PENDING  │ 1 (confirm)
- 10   │ "Sí"                  │ [Felix, Remittances] │ None (completed)  │ 1 (stable)
+  1   │ "Hola"                │ [Root]               │ None              │ 1 (stable)
+  2   │ "Quiero recarga"      │ [Root,TopUps]      │ recarga@collect   │ 3 (routed)
+  3   │ "+52 55 9999 8888"    │ [Root,TopUps]      │ recarga@select_amt│ 1 (stable)
+  4   │ "Mejor un crédito"    │ [Root,SNPL]        │ apply_snpl@elig   │ 3 (routed)
+  5   │ "Mejor enviar dinero" │ [Root,Remittances] │ send_money@recip  │ 3 (routed)
+  6   │ "A mi mamá"           │ [Root,Remittances] │ send_money@amt    │ 1 (stable)
+  7   │ "200 dólares"         │ [Root,Remittances] │ send_money@dlvr   │ 1 (stable)
+  8   │ "Por banco"           │ [Root,Remittances] │ send_money@review │ 1 (stable)
+  9   │ "Sí, confirmo"        │ [Root,Remittances] │ review + PENDING  │ 1 (confirm)
+ 10   │ "Sí"                  │ [Root,Remittances] │ None (completed)  │ 1 (stable)
 ```
 
 **Key Architectural Features Demonstrated:**
 
 1. **Routing Chain (Eliminates Extra Turns)** (Turns 2, 4, 5)
    - Chain loops until stable state (no routing tools called)
-   - Felix → TopUps → start_flow all happen in ONE user turn
+   - Root → TopUps → start_flow all happen in ONE user turn
    - User gets final agent response immediately
    - Max 3 iterations with loop detection for safety
 
@@ -2105,7 +2220,7 @@ Turn  │ User Said             │ Agent Stack          │ Flow State        �
    - HTTP calls to Services Gateway (port 8001)
 
 3. **Agent Routing via Chain** (Turns 2, 4, 5)
-   - Felix delegates immediately without collecting info
+   - Root agent delegates immediately without collecting info
    - Agents hand off via go_home and enter_* tools
    - Stack maintains navigation history
    - Chain continues until stable state reached
@@ -2127,33 +2242,57 @@ Turn  │ User Said             │ Agent Stack          │ Flow State        �
    - Evaluated but didn't inject (below thresholds)
    - No wasted evaluation on intermediate routing states
 
-This walkthrough shows how Felix maintains coherent conversations across agent switches, flow abandonment, and multi-step transactions - using a routing chain that delivers immediate responses without extra turns.
+This walkthrough shows how COS maintains coherent conversations across agent switches, flow abandonment, and multi-step transactions - using a routing chain that delivers immediate responses without extra turns.
+
+---
+
+## POC Functional Readiness Update (2026-02-12)
+
+This repository now implements the following POC-focused functional updates:
+
+- Deterministic transition conditions now support boolean expressions, comparisons, nested paths, and camel/snake key fallback (`backend/app/core/condition_evaluator.py`).
+- Transition timing now distinguishes user-turn vs tool-result evaluation through `transition_trigger` defaults in config parsing (`backend/app/core/config_types.py`).
+- Routing chain execution now enforces a hard max of 3 iterations per turn (`backend/app/core/orchestrator.py`).
+- Template rendering supports `{var}`, `{{var}}`, and `${var}` placeholders for compatibility with existing agent configs (`backend/app/core/template_renderer.py`).
+- Root agent delegation now includes bill pay and wallet specialists (`backend/app/config/agents/felix.json`), and wallet agent config is available (`backend/app/config/agents/wallet.json`).
+- Context requirements are now propagated from routing outcomes and included in context assembly (`backend/app/core/routing_handler.py`, `backend/app/core/context_assembler.py`).
+- Conversation review endpoints are available for list/detail/events (`/api/chat/conversations*`) and surfaced in admin visualization.
+- Transactional tool payloads include normalized deterministic fields (`status`, `transaction_id`, `reference`, `amount`, `currency`, `timestamp`) across executor/service responses.
+
+### Deferred Scope (Explicitly Out-of-Scope in this POC cycle)
+
+- Full shadow-service runtime parity and shadow-specific orchestration modules described in earlier architecture drafts remain deferred.
+- Legacy admin CRUD parity for all historical endpoint shapes remains deferred in favor of the current JSON-config admin API and visualization tooling.
 
 ---
 
 ## Conclusion
 
-Felix's architecture is designed around these principles:
+The COS architecture is designed around these principles:
 
-1. **Explicit over implicit** - Configuration declares intent clearly
-2. **Separation of concerns** - Each layer has one job
-3. **Immediate responses** - Routing chain eliminates extra turns
-4. **State is king** - Everything is tracked and recoverable
-5. **Fail fast** - Catch configuration errors at startup
-6. **Iterative routing** - Chain loops until stable state, no recursion
-7. **Proactive enrichment** - Load data before asking the LLM
-8. **Service independence** - HTTP-based Services Gateway for scalability
+1. **Team autonomy** - Product teams own their agent configs and services independently
+2. **Agent isolation** - Each agent is ignorant of others; interaction only via tools
+3. **Configuration over code** - JSON configs for "what", Python code for "how"
+4. **Service-presentation separation** - Services return data, presentation layer formats
+5. **Explicit over implicit** - Configuration declares intent clearly
+6. **Separation of concerns** - Each layer has one job
+7. **Immediate responses** - Routing chain eliminates extra turns
+8. **State is king** - Everything is tracked and recoverable
+9. **Fail fast** - Catch configuration errors at startup
+10. **Service independence** - HTTP-based Services Gateway for scalability
 
 The result is a conversational AI system that's:
+- **Multi-product ready** - New products added via config, not code changes
+- **Team-independent** - Product teams ship without blocking each other
 - **Responsive** - Users get answers immediately, no extra turns needed
-- **Maintainable** - Changes are configuration, not code
+- **Maintainable** - Changes are configuration owned by product teams
 - **Scalable** - Services deployed independently, HTTP communication
 - **Predictable** - Routing chain execution with loop detection
-- **Resilient** - Errors are contained and recoverable
-- **Testable** - Clear boundaries enable focused testing
+- **Resilient** - Errors contained to single agent/service (reduced blast radius)
+- **Testable** - Clear boundaries enable focused testing per team
 
 ---
 
-*This document describes the Felix Conversational Orchestrator architecture as of January 2026.*
+*This document describes the Conversational Orchestrator Service (COS) architecture as of January 2026.*
 
-*Last updated: January 12, 2026 - Updated agent hierarchy (removed Wallet/Credit agents, added Financial Advisor), clarified shadow service status (Campaigns disabled), added services gateway details.*
+*Last updated: January 13, 2026 - Added Ownership Model section, updated data layer diagram (JSON configs vs database), added team independence rationale, aligned with architecture_proposal.md principles, clarified agent isolation enforcement.*

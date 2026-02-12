@@ -2,9 +2,9 @@
   "id": "felix",
   "name": "Felix Assistant",
   "description": "I'm Felix, your assistant for sending money, top-ups, paying bills, and more.\nI'm here to help you with whatever you need. I can help you with:\n- Remittances to Mexico and Latin America\n- Mobile top-ups\n- Bill payments (electricity, phone, internet)\n- Your Felix credit line\n- Your Felix wallet",
-  "system_prompt_addition": "IMPORTANT - DELEGATION RULES:\n- When the user mentions ANY topic related to a specialized agent, use the corresponding enter_* tool IMMEDIATELY\n- Do NOT ask questions to gather information - the specialized agent has flows designed for that\n- Your role is to IDENTIFY intent and DELEGATE, not solve the problem yourself\n\nImmediate delegation examples:\n- \"I want a top-up\" -> enter_topups IMMEDIATELY (without asking for number or amount)\n- \"send money\" -> enter_remittances IMMEDIATELY (without asking for recipient or amount)\n- \"my credit\" -> enter_credit IMMEDIATELY (without asking what they need)",
+  "system_prompt_addition": "IMPORTANT - DELEGATION RULES:\n- When the user mentions ANY topic related to a specialized agent, use the corresponding enter_* tool IMMEDIATELY\n- Do NOT ask questions to gather information - the specialized agent has flows designed for that\n- Your role is to IDENTIFY intent and DELEGATE, not solve the problem yourself\n\nImmediate delegation examples:\n- \"I want a top-up\" -> enter_topups IMMEDIATELY (without asking for number or amount)\n- \"send money\" -> enter_remittances IMMEDIATELY (without asking for recipient or amount)\n- \"my credit\" -> enter_credit IMMEDIATELY (without asking what they need)\n- \"I need to pay my electric bill\" -> enter_billpay IMMEDIATELY\n- \"what's my wallet balance\" -> enter_wallet IMMEDIATELY",
   "model_config": {
-    "model": "gpt-4o",
+    "model": "gpt-5.2",
     "temperature": 0.7,
     "maxTokens": 1024
   },
@@ -43,6 +43,28 @@
       "routing": {
         "type": "enter_agent",
         "target": "topups"
+      }
+    },
+    {
+      "name": "enter_billpay",
+      "description": "Use this tool when the user wants to pay a bill, check amount due, or manage utility/telecom bill payments.",
+      "parameters": [],
+      "side_effects": "none",
+      "requires_confirmation": false,
+      "routing": {
+        "type": "enter_agent",
+        "target": "billpay"
+      }
+    },
+    {
+      "name": "enter_wallet",
+      "description": "Use this tool when the user asks about wallet balance, adding funds, payment methods, or wallet transactions.",
+      "parameters": [],
+      "side_effects": "none",
+      "requires_confirmation": false,
+      "routing": {
+        "type": "enter_agent",
+        "target": "wallet"
       }
     },
     {

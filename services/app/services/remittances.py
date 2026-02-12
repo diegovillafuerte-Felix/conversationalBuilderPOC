@@ -921,6 +921,11 @@ class MockRemittancesService:
             "delivery_method": delivery_method["display_name"],
             "eta": quote["eta"],
             "status": "PROCESSING",
+            "transaction_id": transfer_id,
+            "reference": transfer_id,
+            "amount": amount_usd,
+            "source_currency": "USD",
+            "timestamp": transfer["created_at"],
         }
 
     def get_transfer_status(
@@ -1030,6 +1035,12 @@ class MockRemittancesService:
             "transfer_id": transfer_id,
             "amount_usd": transfer.get("amount_usd"),
             "refund_eta": "3-5 business days",
+            "status": "CANCELLED",
+            "transaction_id": transfer_id,
+            "reference": transfer_id,
+            "amount": transfer.get("amount_usd"),
+            "currency": "USD",
+            "timestamp": transfer.get("cancelled_at"),
         }
 
     def create_snpl_transfer(
@@ -1139,6 +1150,11 @@ class MockRemittancesService:
             "eta": eta,
             "status": "PROCESSING",
             "snpl_loan_id": snpl_loan_id,
+            "transaction_id": transfer_id,
+            "reference": transfer_id,
+            "amount": amount_usd,
+            "source_currency": "USD",
+            "timestamp": transfer["created_at"],
         }
 
     # ==================== QUICK SEND TOOLS ====================

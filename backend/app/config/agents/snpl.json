@@ -368,7 +368,7 @@
             {
               "trigger": "approved",
               "target": "completed",
-              "condition": "application.approved == true"
+              "condition": "_tool_result.approved == true"
             },
             {
               "trigger": "denied",

@@ -2,9 +2,9 @@
   "id": "topups",
   "name": "Top-Ups Agent",
   "description": "I'm the Felix top-ups specialist. I can help you with:\n- Sending top-ups to phones in Mexico and Latin America\n- Viewing available carriers (Telcel, Movistar, AT&T, etc.)\n- Checking your frequent numbers\n- Viewing top-up history\n\nTop-ups arrive instantly to the phone.",
-  "system_prompt_addition": "When you detect intent to make a top-up, use start_flow_recarga to initiate the flow.\nThe flow will guide the user step by step - do not collect information manually.",
+  "system_prompt_addition": "CRITICAL DELEGATION RULES:\n- When user wants to send a top-up, call start_flow_recarga IMMEDIATELY\n- Do NOT respond with text about top-ups - ONLY call the tool\n- Do NOT ask questions or show information - the flow handles that\n- Your ONLY job is to detect intent and delegate via tool call\n- If user mentions: recarga, top-up, recharge, saldo, airtime -> call start_flow_recarga\n\nThe ONLY valid responses from you are:\n1. Tool call to start_flow_recarga (for top-up intent)\n2. Tool call to go_home (for out-of-scope requests)\n3. Tool call to escalate_to_human (for problems)\n\nERROR HANDLING:\nIf a tool returns an error (e.g., service unavailable, connection error), you MUST respond with a helpful message to the user explaining there was a temporary issue and asking them to try again. Do NOT leave the response empty.",
   "model_config": {
-    "model": "gpt-4o",
+    "model": "gpt-5.2",
     "temperature": 0.5,
     "maxTokens": 1024
   },
@@ -14,9 +14,6 @@
     "canEscalate": true
   },
   "parent_agent": "felix",
-  "context_requirements": [
-    {"type": "product_summary", "productFilter": "topups"}
-  ],
   "tools": [
     {
       "name": "start_flow_recarga",
@@ -147,21 +144,18 @@
         {
           "id": "collect_number",
           "name": "Collect Number",
-          "agent_instructions": "You are collecting the phone number for a top-up.\n\nThe 'frequentNumbersData' in Available Context Data contains the user's frequent numbers (if any). Present them in a clear, friendly format and ask which number they want to top up. Tell them they can also provide a different number.\n\nWhen they provide a number (from the list or new), use detect_carrier to identify the carrier.",
-          "state_tools": [],
+          "agent_instructions": "You are collecting the phone number for a top-up.\n\nYour first action should be to call get_frequent_numbers to show the user their saved numbers. Then ask which number they want to top up, or let them provide a new number.\n\nWhen they provide a number (from the list or new), use detect_carrier to identify the carrier.",
+          "state_tools": ["get_frequent_numbers", "detect_carrier"],
           "transitions": [
             {
               "trigger": "carrier_detected",
+              "tool_trigger": "detect_carrier",
               "target": "select_amount",
-              "condition": "carrier_id is not None"
+              "condition": "_tool_result.carrier is not None"
             }
           ],
           "on_enter": {
-            "callTool": {
-              "name": "get_frequent_numbers",
-              "parameters": {},
-              "storeAs": "frequentNumbersData"
-            }
+            "message": "What phone number would you like to top up?"
           },
           "is_final": false
         },
@@ -169,7 +163,7 @@
           "id": "select_amount",
           "name": "Select Amount",
           "agent_instructions": "You are in the step of selecting the top-up amount.\n\nThe carrier has been detected. Your task:\n1. Show the available top-up options for the carrier (Telcel: $50, $100, $200, $500 MXN)\n2. Use get_topup_price to show the USD cost when the user asks\n3. Wait for the user to select an amount\n\nWhen the user selects an amount, use send_topup to process the top-up.",
-          "state_tools": [],
+          "state_tools": ["get_topup_price", "send_topup"],
           "transitions": [
             {
               "trigger": "amount_selected",
@@ -186,7 +180,7 @@
           "id": "confirm_payment",
           "name": "Confirm Payment",
           "agent_instructions": "You are in the payment confirmation step.\n\nYour task:\n1. Show a summary of the top-up (number, carrier, amount, USD cost)\n2. Simulate a payment link: \"Your payment link is ready\"\n3. Use send_topup to execute the top-up - this will ask for confirmation automatically\n\nWhen the user confirms, the top-up will be processed.",
-          "state_tools": [],
+          "state_tools": ["send_topup"],
           "transitions": [
             {
               "trigger": "payment_confirmed",

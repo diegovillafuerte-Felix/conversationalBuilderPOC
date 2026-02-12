@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 from pathlib import Path
 from functools import lru_cache
 from typing import Optional
@@ -10,6 +11,87 @@ logger = logging.getLogger(__name__)
 
 CONFIG_DIR = Path(__file__).parent.parent / "config"
 AGENTS_DIR = CONFIG_DIR / "agents"
+_PLACEHOLDER_PATTERNS = (
+    r"\{\{(\w+(?:\.\w+)*)\}\}",
+    r"\$\{(\w+(?:\.\w+)*)\}",
+    r"(?<!\{)\{(\w+(?:\.\w+)*)\}(?!\})",
+)
+
+
+def _extract_placeholders(template: str) -> set[str]:
+    placeholders: set[str] = set()
+    for pattern in _PLACEHOLDER_PATTERNS:
+        placeholders.update(re.findall(pattern, template or ""))
+    return placeholders
+
+
+def _warn_unknown_placeholders(agent_id: str, config: dict) -> None:
+    """Best-effort warnings for placeholders unlikely to resolve at runtime."""
+    tools = config.get("tools", [])
+    subflows = config.get("subflows", [])
+    known_flow_keys = {
+        key
+        for subflow in subflows
+        for key in (subflow.get("data_schema") or {}).keys()
+    }
+    runtime_keys = {
+        "amount",
+        "amount_usd",
+        "recipient_name",
+        "currency",
+        "eta",
+        "status",
+        "reference",
+        "transaction_id",
+    }
+
+    # Tool confirmation templates
+    for tool in tools:
+        template = tool.get("confirmation_template")
+        if not template:
+            continue
+        placeholders = _extract_placeholders(template)
+        if not placeholders:
+            continue
+        param_names = {param.get("name") for param in tool.get("parameters", [])}
+        unknown = {
+            placeholder
+            for placeholder in placeholders
+            if placeholder.split(".")[0] not in param_names
+            and placeholder.split(".")[0] not in known_flow_keys
+            and placeholder.split(".")[0] not in runtime_keys
+        }
+        if unknown:
+            logger.warning(
+                "Agent %s tool %s confirmation template has placeholders not in tool params: %s",
+                agent_id,
+                tool.get("name"),
+                sorted(unknown),
+            )
+
+    # on_enter templates compared against subflow data schema keys
+    for subflow in subflows:
+        schema_keys = set((subflow.get("data_schema") or {}).keys())
+        for state in subflow.get("states", []):
+            on_enter = state.get("on_enter") or {}
+            template = on_enter.get("message") or on_enter.get("sendMessage")
+            if not isinstance(template, str):
+                continue
+            placeholders = _extract_placeholders(template)
+            unknown = {
+                placeholder
+                for placeholder in placeholders
+                if placeholder.split(".")[0] not in schema_keys
+                and placeholder.split(".")[0] not in runtime_keys
+            }
+            if unknown:
+                logger.warning(
+                    "Agent %s flow %s state %s on_enter template has placeholders not in flow data_schema: %s",
+                    agent_id,
+                    subflow.get("id"),
+                    state.get("id"),
+                    sorted(unknown),
+                )
 
 
 @lru_cache(maxsize=32)
@@ -26,7 +108,9 @@ def load_agent_config(agent_id: str) -> dict:
     path = CONFIG_DIR / "agents" / f"{agent_id}.json"
     try:
         with open(path, encoding="utf-8") as f:
-            return json.load(f)
+            config = json.load(f)
+            _warn_unknown_placeholders(agent_id, config)
+            return config
     except FileNotFoundError:
         logger.warning(f"Agent config not found: {path}")
         return {}
@@ -139,7 +223,6 @@ def reload_configs() -> None:
     load_agent_config.cache_clear()
     load_prompts.cache_clear()
     load_confirmation_templates.cache_clear()
-    load_shadow_service_config.cache_clear()
     logger.info("Configuration caches cleared")
 
 
@@ -235,160 +318,3 @@ def agent_exists(agent_id: str) -> bool:
     """
     filepath = AGENTS_DIR / f"{agent_id}.json"
     return filepath.exists()
-
-
-# ============== Shadow Service Config ==============
-
-SHADOW_SERVICE_PATH = CONFIG_DIR / "shadow_service.json"
-
-
-@lru_cache(maxsize=1)
-def load_shadow_service_config() -> dict:
-    """
-    Load shadow service configuration from JSON.
-
-    Returns:
-        Shadow service configuration dictionary
-    """
-    try:
-        with open(SHADOW_SERVICE_PATH, encoding="utf-8") as f:
-            return json.load(f)
-    except FileNotFoundError:
-        logger.warning(f"Shadow service config not found: {SHADOW_SERVICE_PATH}")
-        return {
-            "enabled": False,
-            "global_cooldown_messages": 3,
-            "max_messages_per_response": 1,
-            "subagents": [],
-        }
-    except json.JSONDecodeError as e:
-        logger.error(f"Invalid JSON in {SHADOW_SERVICE_PATH}: {e}")
-        return {
-            "enabled": False,
-            "global_cooldown_messages": 3,
-            "max_messages_per_response": 1,
-            "subagents": [],
-        }
-
-
-def save_shadow_service_config(config: dict) -> bool:
-    """
-    Save shadow service config to JSON file.
-
-    Args:
-        config: The configuration dictionary to save
-
-    Returns:
-        True if saved successfully
-
-    Raises:
-        ValueError: If config is invalid
-        IOError: If file cannot be written
-    """
-    if not isinstance(config, dict):
-        raise ValueError("Config must be a dictionary")
-
-    try:
-        with open(SHADOW_SERVICE_PATH, 'w', encoding='utf-8') as f:
-            json.dump(config, f, indent=2, ensure_ascii=False)
-
-        # Clear cache so next read gets fresh data
-        load_shadow_service_config.cache_clear()
-        logger.info("Saved shadow service config")
-        return True
-    except Exception as e:
-        logger.error(f"Failed to save shadow service config: {e}")
-        raise
-
-
-def get_shadow_subagent_config(subagent_id: str) -> Optional[dict]:
-    """
-    Get configuration for a specific shadow subagent.
-
-    Args:
-        subagent_id: The subagent identifier (e.g., "financial_advisor", "campaigns")
-
-    Returns:
-        Subagent configuration dictionary or None if not found
-    """
-    config = load_shadow_service_config()
-    for subagent in config.get("subagents", []):
-        if subagent.get("id") == subagent_id:
-            return subagent
-    return None
-
-
-def update_shadow_subagent_config(subagent_id: str, updates: dict) -> bool:
-    """
-    Update configuration for a specific shadow subagent.
-
-    Args:
-        subagent_id: The subagent identifier
-        updates: Dictionary of fields to update
-
-    Returns:
-        True if updated successfully, False if subagent not found
-    """
-    config = load_shadow_service_config()
-    for i, subagent in enumerate(config.get("subagents", [])):
-        if subagent.get("id") == subagent_id:
-            config["subagents"][i].update(updates)
-            save_shadow_service_config(config)
-            return True
-    return False
-
-
-def add_shadow_subagent(subagent_config: dict) -> bool:
-    """
-    Add a new shadow subagent configuration.
-
-    Args:
-        subagent_config: Configuration for the new subagent
-
-    Returns:
-        True if added successfully
-
-    Raises:
-        ValueError: If subagent with same ID already exists
-    """
-    config = load_shadow_service_config()
-    subagent_id = subagent_config.get("id")
-
-    if not subagent_id:
-        raise ValueError("Subagent config must have an 'id' field")
-
-    # Check for duplicate
-    for existing in config.get("subagents", []):
-        if existing.get("id") == subagent_id:
-            raise ValueError(f"Subagent with id '{subagent_id}' already exists")
-
-    if "subagents" not in config:
-        config["subagents"] = []
-
-    config["subagents"].append(subagent_config)
-    save_shadow_service_config(config)
-    return True
-
-
-def delete_shadow_subagent(subagent_id: str) -> bool:
-    """
-    Delete a shadow subagent configuration.
-
-    Args:
-        subagent_id: The subagent identifier to delete
-
-    Returns:
-        True if deleted, False if not found
-    """
-    config = load_shadow_service_config()
-    original_count = len(config.get("subagents", []))
-
-    config["subagents"] = [
-        s for s in config.get("subagents", [])
-        if s.get("id") != subagent_id
-    ]
-
-    if len(config["subagents"]) < original_count:
-        save_shadow_service_config(config)
-        return True
-    return False

@@ -1,17 +1,15 @@
-"""SQLAlchemy ORM models."""
+"""SQLAlchemy ORM models.
 
-from app.models.agent import Agent, Tool
+Note: Agent configuration is now loaded from JSON via AgentRegistry.
+Only session/message/user data uses database models.
+"""
+
 from app.models.session import ConversationSession
-from app.models.subflow import Subflow, SubflowState
 from app.models.user import UserContext
 from app.models.conversation import ConversationMessage, ConversationHistoryCompacted
 
 __all__ = [
-    "Agent",
-    "Tool",
     "ConversationSession",
-    "Subflow",
-    "SubflowState",
     "UserContext",
     "ConversationMessage",
     "ConversationHistoryCompacted",

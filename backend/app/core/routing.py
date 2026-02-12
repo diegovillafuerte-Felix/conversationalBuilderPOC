@@ -83,13 +83,13 @@ class RoutingOutcome:
     Attributes:
         handled: Whether this was a routing action (vs regular tool)
         state_changed: Whether session state changed (agent/flow transition)
-        context_requirements: List of data keys to fetch for context enrichment
+        context_requirements: Config-driven enrichment requirements for next prompt assembly
         response_text: Direct response text to return (only for errors/escalation)
         error: Error message if execution failed
     """
     handled: bool
     state_changed: bool
-    context_requirements: List[str] = field(default_factory=list)
+    context_requirements: List[dict] = field(default_factory=list)
     response_text: Optional[str] = None
     error: Optional[str] = None
 

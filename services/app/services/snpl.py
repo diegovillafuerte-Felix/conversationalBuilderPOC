@@ -296,7 +296,12 @@ class MockSNPLService:
             "weekly_payment": terms["weekly_payment"],
             "total_repayment": terms["total_repayment"],
             "first_payment_date": first_payment.strftime("%Y-%m-%d"),
-            "final_payment_date": final_payment.strftime("%Y-%m-%d")
+            "final_payment_date": final_payment.strftime("%Y-%m-%d"),
+            "status": "approved",
+            "transaction_id": loan_id,
+            "reference": loan_id,
+            "currency": "USD",
+            "timestamp": now.isoformat(),
         }
 
     # ==================== LOAN OVERVIEW & DETAILS ====================
@@ -540,7 +545,13 @@ class MockSNPLService:
             "loan_id": loan_id,
             "new_balance": new_balance,
             "loan_status": loan["status"],
-            "payments_remaining": loan["payments_remaining"]
+            "payments_remaining": loan["payments_remaining"],
+            "status": "completed",
+            "transaction_id": payment_id,
+            "reference": payment_id,
+            "amount": amount,
+            "currency": "USD",
+            "timestamp": now.isoformat(),
         }
 
     # ==================== USE FOR REMITTANCE ====================
@@ -581,7 +592,13 @@ class MockSNPLService:
         return {
             "success": True,
             "loan_id": loan_id,
-            "transfer_id": transfer_id
+            "transfer_id": transfer_id,
+            "status": "linked",
+            "transaction_id": transfer_id,
+            "reference": transfer_id,
+            "amount": amount_usd,
+            "currency": "USD",
+            "timestamp": datetime.now().isoformat(),
         }
 
     # ==================== ALIAS METHODS (for tool name matching) ====================

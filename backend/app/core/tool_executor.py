@@ -5,9 +5,10 @@ import re
 from typing import Optional, Any
 from dataclasses import dataclass
 
-from app.models.agent import Tool
 from app.models.session import ConversationSession
-from app.clients.service_client import ServiceClient, ServiceResult, get_service_client
+from app.core.config_types import ToolConfig
+from app.core.template_renderer import get_template_renderer
+from app.clients.service_client import ServiceClient, get_service_client
 from app.clients.service_mapping import SERVICE_MAPPING
 
 logger = logging.getLogger(__name__)
@@ -37,7 +38,7 @@ class ToolExecutor:
 
     async def execute(
         self,
-        tool: Tool,
+        tool: ToolConfig,
         params: dict,
         session: ConversationSession,
         skip_confirmation: bool = False,
@@ -67,7 +68,12 @@ class ToolExecutor:
         # Execute the tool
         try:
             result = await self._call_service(tool, params, session)
-            return ToolResult(success=True, data=result)
+            # Check if service returned an error in the data
+            if isinstance(result, dict) and "error" in result:
+                error_msg = result.get("message", result.get("error", "Service error"))
+                return ToolResult(success=False, data=result, error=error_msg)
+            normalized = self._normalize_result_payload(tool.name, result)
+            return ToolResult(success=True, data=normalized)
         except Exception as e:
             logger.error(f"Tool execution failed: {tool.name} - {e}")
             return ToolResult(success=False, data=None, error=str(e))
@@ -121,7 +127,8 @@ class ToolExecutor:
             )
 
         if result.success:
-            return ToolResult(success=True, data=result.data)
+            normalized = self._normalize_result_payload(tool_name, result.data)
+            return ToolResult(success=True, data=normalized)
         else:
             return ToolResult(
                 success=False,
@@ -130,7 +137,7 @@ class ToolExecutor:
             )
 
     async def _call_service(
-        self, tool: Tool, params: dict, session: ConversationSession
+        self, tool: ToolConfig, params: dict, session: ConversationSession
     ) -> Any:
         """Call the service via HTTP with validation."""
         tool_name = tool.name
@@ -154,9 +161,6 @@ class ToolExecutor:
         # Get endpoint mapping
         mapping = SERVICE_MAPPING.get(tool_name)
         if not mapping:
-            # If no service method found, check API config
-            if tool.api_config:
-                return await self._call_api(tool, params)
             raise ValueError(f"No handler found for tool: {tool_name}")
 
         method, endpoint_template = mapping
@@ -196,31 +200,96 @@ class ToolExecutor:
         else:
             return {"error": result.error_code or "SERVICE_ERROR", "message": result.error}
 
-    async def _call_api(self, tool: Tool, params: dict) -> Any:
+    async def _call_api(self, tool: ToolConfig, params: dict) -> Any:
         """Call an external API (placeholder for future implementation)."""
         # For POC, return mock success
         logger.warning(f"API call for {tool.name} not implemented, returning mock success")
         return {"status": "success", "message": "Mock API response"}
 
     def _render_confirmation(
-        self, tool: Tool, params: dict, session: ConversationSession
+        self, tool: ToolConfig, params: dict, session: ConversationSession
     ) -> str:
         """Render the confirmation message template."""
         template = tool.confirmation_template or f"¿Confirmas ejecutar {tool.name}?"
 
-        # Simple template rendering with {{placeholder}} syntax
-        def replace_placeholder(match):
-            key = match.group(1)
-            # Check params first
-            if key in params:
-                return str(params[key])
-            # Check flow data
-            if session.current_flow and key in session.current_flow.get("stateData", {}):
-                return str(session.current_flow["stateData"][key])
-            return f"{{{{{key}}}}}"  # Return original if not found
+        flow_data = session.current_flow.get("stateData", {}) if session.current_flow else {}
+        render_data = {
+            **flow_data,
+            **params,
+        }
+        renderer = get_template_renderer()
+        rendered = renderer.render(template, render_data)
 
-        rendered = re.sub(r"\{\{(\w+)\}\}", replace_placeholder, template)
+        unresolved = renderer.find_unresolved_placeholders(rendered)
+        if unresolved:
+            logger.warning(
+                "Confirmation template for tool %s has unresolved placeholders: %s",
+                tool.name,
+                sorted(set(unresolved)),
+            )
         return rendered
+
+    def _normalize_result_payload(self, tool_name: str, payload: Any) -> Any:
+        """Normalize transactional payloads to deterministic fields."""
+        if not isinstance(payload, dict):
+            return payload
+
+        normalized = dict(payload)
+        status = str(normalized.get("status", "")).lower()
+        if not status:
+            status = "success"
+
+        transaction_id = (
+            normalized.get("transaction_id")
+            or normalized.get("transactionId")
+            or normalized.get("transfer_id")
+            or normalized.get("transferId")
+            or normalized.get("topupId")
+            or normalized.get("paymentId")
+            or normalized.get("loan_id")
+        )
+        reference = (
+            normalized.get("reference")
+            or normalized.get("confirmationNumber")
+            or normalized.get("confirmation_number")
+            or transaction_id
+        )
+
+        amount = (
+            normalized.get("amount")
+            or normalized.get("amount_usd")
+            or normalized.get("amountUsd")
+            or normalized.get("usdCharged")
+            or normalized.get("totalUsd")
+            or normalized.get("amountPaid")
+        )
+        currency = (
+            normalized.get("currency")
+            or normalized.get("localCurrency")
+            or normalized.get("from_currency")
+            or ("USD" if amount is not None else None)
+        )
+        timestamp = (
+            normalized.get("timestamp")
+            or normalized.get("processedAt")
+            or normalized.get("created_at")
+            or normalized.get("createdAt")
+        )
+
+        if transaction_id:
+            normalized["transaction_id"] = transaction_id
+        if reference:
+            normalized["reference"] = reference
+        if amount is not None:
+            normalized["amount"] = amount
+        if currency:
+            normalized["currency"] = currency
+        if timestamp:
+            normalized["timestamp"] = timestamp
+        normalized["status"] = status
+        normalized["_tool_name"] = tool_name
+
+        return normalized
 
     def classify_user_confirmation(self, message: str) -> Optional[bool]:
         """

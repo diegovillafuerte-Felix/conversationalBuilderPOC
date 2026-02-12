@@ -9,9 +9,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from app.database import init_db, close_db, async_session_maker
 from app.routes import chat, admin
-from app.seed.agents import run_seeds
+from app.seed.users import seed_sample_users
 from app.core.config_loader import reload_configs, get_agent_ids
-from app.core.routing_registry import initialize_routing_registry, RoutingRegistryError
+from app.core.agent_registry import initialize_agent_registry, AgentRegistryError
 from app.clients.service_client import get_service_client
 
 # Configure logging
@@ -37,19 +37,18 @@ async def lifespan(app: FastAPI):
     agent_ids = get_agent_ids()
     logger.info(f"Loaded {len(agent_ids)} agent configs from JSON: {agent_ids}")
 
-    # Run seeds (populates DB from JSON for runtime, seeds sample users)
-    async with async_session_maker() as db:
-        await run_seeds(db)
-    logger.info("Seeds completed")
+    # Initialize agent registry (loads and validates all agent configs)
+    try:
+        initialize_agent_registry()
+        logger.info("Agent registry initialized and validated")
+    except AgentRegistryError as e:
+        logger.critical(f"Agent registry initialization failed: {e}")
+        raise  # Prevent startup with invalid configuration
 
-    # Initialize and validate routing registry
+    # Seed sample users (for development)
     async with async_session_maker() as db:
-        try:
-            await initialize_routing_registry(db)
-            logger.info("Routing registry initialized and validated")
-        except RoutingRegistryError as e:
-            logger.critical(f"Routing validation failed: {e}")
-            raise  # Prevent startup with invalid routing
+        await seed_sample_users(db)
+    logger.info("Sample users seeded")
 
     # Check services gateway (non-blocking warning only)
     try:

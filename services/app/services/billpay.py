@@ -154,9 +154,11 @@ class MockBillPayService:
 
         pricing = self.calculate_payment(biller_id, amount)
         confirmation_id = _random_string(12).upper()
+        payment_id = f"BILL{_random_string(8)}"
+        processed_at = datetime.utcnow().isoformat()
 
         return {
-            "paymentId": f"BILL{_random_string(8)}",
+            "paymentId": payment_id,
             "biller": biller_id,
             "billerName": biller["name"],
             "accountNumber": account_number,
@@ -165,7 +167,11 @@ class MockBillPayService:
             "usdCharged": pricing["totalUsd"],
             "status": "completed",
             "confirmationNumber": confirmation_id,
-            "processedAt": datetime.utcnow().isoformat(),
+            "processedAt": processed_at,
+            "transaction_id": payment_id,
+            "reference": confirmation_id,
+            "amount": amount,
+            "timestamp": processed_at,
         }
 
     def save_biller(

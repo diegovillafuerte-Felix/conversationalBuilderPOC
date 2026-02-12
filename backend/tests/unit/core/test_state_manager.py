@@ -19,13 +19,13 @@ class TestStateManager:
         session = await manager.get_or_create_session(
             session_id=None,
             user_id="new_user",
-            root_agent_id=str(sample_agent.id),
+            root_agent_id=sample_agent.config_id,
         )
 
         assert session is not None
         assert session.user_id == "new_user"
         assert len(session.agent_stack) == 1
-        assert session.agent_stack[0]["agentId"] == str(sample_agent.id)
+        assert session.agent_stack[0]["agentId"] == sample_agent.config_id
         assert session.status == "active"
 
     @pytest.mark.asyncio
@@ -38,7 +38,7 @@ class TestStateManager:
         session = await manager.get_or_create_session(
             session_id=sample_session.session_id,
             user_id=sample_session.user_id,
-            root_agent_id=str(sample_agent.id),
+            root_agent_id=sample_agent.config_id,
         )
 
         assert session.session_id == sample_session.session_id
@@ -67,10 +67,11 @@ class TestStateManager:
         """Test getting the current agent from session."""
         manager = StateManager(db_session)
 
-        agent = await manager.get_current_agent(sample_session)
+        # get_current_agent is now synchronous
+        agent = manager.get_current_agent(sample_session)
 
         assert agent is not None
-        assert agent.id == sample_agent.id
+        assert agent.config_id == sample_agent.config_id
         assert agent.name == sample_agent.name
 
     @pytest.mark.asyncio
@@ -80,11 +81,11 @@ class TestStateManager:
         original_stack_len = len(sample_session.agent_stack)
 
         await manager.push_agent(
-            sample_session, str(sample_child_agent.id), "User requested topups"
+            sample_session, sample_child_agent.config_id, "User requested topups"
         )
 
         assert len(sample_session.agent_stack) == original_stack_len + 1
-        assert sample_session.agent_stack[-1]["agentId"] == str(sample_child_agent.id)
+        assert sample_session.agent_stack[-1]["agentId"] == sample_child_agent.config_id
         assert sample_session.agent_stack[-1]["entryReason"] == "User requested topups"
         # Flow state should be cleared
         assert sample_session.current_flow is None

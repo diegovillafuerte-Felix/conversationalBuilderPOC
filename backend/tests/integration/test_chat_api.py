@@ -167,3 +167,45 @@ class TestChatAPIMessageFlow:
         )
 
         assert response2.json()["session_id"] == session_id
+
+
+class TestConversationReviewEndpoints:
+    """Integration tests for conversation browse/detail/event endpoints."""
+
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_list_conversations(self, test_client):
+        """List conversations after creating one via chat flow."""
+        await test_client.post(
+            "/api/chat/message",
+            json={"user_id": "review_user", "message": "Hola"},
+        )
+
+        response = await test_client.get("/api/chat/conversations")
+        assert response.status_code == 200
+        data = response.json()
+        assert isinstance(data, list)
+        assert len(data) >= 1
+        assert "session_id" in data[0]
+
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_get_conversation_detail_and_events(self, test_client):
+        """Conversation detail and events should be retrievable for a session."""
+        create_resp = await test_client.post(
+            "/api/chat/message",
+            json={"user_id": "review_user_2", "message": "Necesito ayuda"},
+        )
+        session_id = create_resp.json()["session_id"]
+
+        detail_resp = await test_client.get(f"/api/chat/conversations/{session_id}")
+        assert detail_resp.status_code == 200
+        detail = detail_resp.json()
+        assert detail["session_id"] == session_id
+        assert isinstance(detail.get("messages", []), list)
+
+        events_resp = await test_client.get(f"/api/chat/conversations/{session_id}/events")
+        assert events_resp.status_code == 200
+        events = events_resp.json()
+        assert events["session_id"] == session_id
+        assert isinstance(events.get("events", []), list)

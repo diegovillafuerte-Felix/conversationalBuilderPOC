@@ -225,6 +225,7 @@ class MockTopUpsService:
         """Send a top-up."""
         pricing = self.get_topup_price(carrier_id, amount)
         topup_id = f"TOP{_random_string(8)}"
+        processed_at = datetime.utcnow().isoformat()
 
         return {
             "topupId": topup_id,
@@ -234,7 +235,12 @@ class MockTopUpsService:
             "localCurrency": pricing["localCurrency"],
             "usdCharged": pricing["totalUsd"],
             "status": "completed",
-            "processedAt": datetime.utcnow().isoformat(),
+            "processedAt": processed_at,
+            "transaction_id": topup_id,
+            "reference": topup_id,
+            "amount": amount,
+            "currency": pricing["localCurrency"],
+            "timestamp": processed_at,
         }
 
     def get_topup_history(self, user_id: str, limit: int = 5) -> list:

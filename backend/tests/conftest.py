@@ -148,88 +148,30 @@ async def patched_llm_client(mock_llm_client):
 
 # ============= Sample Data Fixtures =============
 
-@pytest_asyncio.fixture
-async def sample_agent(db_session):
-    """Create a sample root agent for testing."""
-    from app.models.agent import Agent, Tool
+@pytest.fixture
+def initialized_registry():
+    """Initialize the agent registry with real configs for testing."""
+    from app.core.agent_registry import initialize_agent_registry, reset_agent_registry, get_agent_registry
 
-    agent = Agent(
-        config_id="test_felix",
-        name="Test Felix",
-        description="Test root agent for testing purposes.",
-        system_prompt_addition="You are a test agent.",
-        model_config_json={"model": "gpt-4o", "temperature": 0.7, "maxTokens": 1024},
-        navigation_tools={"canGoUp": False, "canGoHome": False, "canEscalate": True},
-        parent_agent_id=None,
-        is_active=True,
-    )
-    db_session.add(agent)
-    await db_session.flush()
-
-    # Add a sample tool
-    tool = Tool(
-        agent_id=agent.id,
-        name="enter_topups",
-        description="Navigate to topups agent",
-        parameters=[],
-        side_effects="none",
-        requires_confirmation=False,
-        routing={"type": "enter_agent", "target": "test_topups"},
-    )
-    db_session.add(tool)
-
-    await db_session.commit()
-    await db_session.refresh(agent)
-    return agent
+    # Reset to ensure clean state
+    reset_agent_registry()
+    # Initialize with real JSON configs
+    initialize_agent_registry()
+    yield get_agent_registry()
+    # Cleanup
+    reset_agent_registry()
 
 
-@pytest_asyncio.fixture
-async def sample_child_agent(db_session, sample_agent):
-    """Create a sample child agent for testing."""
-    from app.models.agent import Agent, Tool
+@pytest.fixture
+def sample_agent(initialized_registry):
+    """Get the root agent (felix) from the registry for testing."""
+    return initialized_registry.get_root_agent()
 
-    agent = Agent(
-        config_id="test_topups",
-        name="Test Topups",
-        description="Test topups agent for testing purposes.",
-        system_prompt_addition="You handle top-ups.",
-        model_config_json={"model": "gpt-4o", "temperature": 0.5, "maxTokens": 1024},
-        navigation_tools={"canGoUp": True, "canGoHome": True, "canEscalate": True},
-        parent_agent_id=sample_agent.id,
-        is_active=True,
-    )
-    db_session.add(agent)
-    await db_session.flush()
 
-    # Add sample tools
-    tool1 = Tool(
-        agent_id=agent.id,
-        name="send_topup",
-        description="Send a topup",
-        parameters=[
-            {"name": "phone_number", "type": "string", "required": True},
-            {"name": "amount", "type": "number", "required": True},
-        ],
-        side_effects="financial",
-        requires_confirmation=True,
-        confirmation_template="Confirm topup of ${amount} to {phone_number}?",
-    )
-    tool2 = Tool(
-        agent_id=agent.id,
-        name="detect_carrier",
-        description="Detect phone carrier",
-        parameters=[
-            {"name": "phone_number", "type": "string", "required": True},
-        ],
-        side_effects="read",
-        requires_confirmation=False,
-    )
-    db_session.add(tool1)
-    db_session.add(tool2)
-
-    await db_session.commit()
-    await db_session.refresh(agent)
-    return agent
+@pytest.fixture
+def sample_child_agent(initialized_registry):
+    """Get a child agent (topups) from the registry for testing."""
+    return initialized_registry.get_agent("topups")
 
 
 @pytest_asyncio.fixture
@@ -263,7 +205,7 @@ async def sample_session(db_session, sample_agent):
     session = ConversationSession(
         user_id="test_user_123",
         agent_stack=[{
-            "agentId": str(sample_agent.id),
+            "agentId": sample_agent.config_id,  # Use config_id instead of UUID
             "enteredAt": "2025-01-01T00:00:00",
             "entryReason": "Session start",
         }],
@@ -284,12 +226,12 @@ async def sample_session_with_child(db_session, sample_agent, sample_child_agent
         user_id="test_user_123",
         agent_stack=[
             {
-                "agentId": str(sample_agent.id),
+                "agentId": sample_agent.config_id,  # Use config_id instead of UUID
                 "enteredAt": "2025-01-01T00:00:00",
                 "entryReason": "Session start",
             },
             {
-                "agentId": str(sample_child_agent.id),
+                "agentId": sample_child_agent.config_id,  # Use config_id instead of UUID
                 "enteredAt": "2025-01-01T00:01:00",
                 "entryReason": "User requested topups",
             },

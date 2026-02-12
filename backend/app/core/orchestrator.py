@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import re
 import time
 from typing import Optional, List, Any
 from uuid import UUID
@@ -23,12 +24,19 @@ from app.core.template_renderer import TemplateRenderer, get_template_renderer
 from app.core.routing import RoutingType, RoutingOutcome
 from app.core.routing_handler import RoutingHandler
 from app.core.agent_registry import get_agent_registry
-from app.core.config_types import AgentConfig, ToolConfig, SubflowConfig, SubflowStateConfig  # PromptMode imported above
+from app.core.config_types import (
+    AgentConfig,
+    ToolConfig,
+    SubflowConfig,
+    SubflowStateConfig,
+    TransitionTrigger,
+)  # PromptMode imported above
 from app.core.history_compactor import HistoryCompactor
 from app.core.event_trace import EventTracer, EventCategory, EventLevel
 from app.core.context_enrichment import evaluate_condition
 
 logger = logging.getLogger(__name__)
+MAX_CHAIN_STEPS = 3
 
 
 @dataclass
@@ -83,6 +91,7 @@ class ChainState:
     routing_path: List[dict] = field(default_factory=list)
     last_llm_response: Optional[LLMResponse] = None
     last_tool_calls: List[dict] = field(default_factory=list)
+    pending_context_requirements: List[dict] = field(default_factory=list)
 
 
 class Orchestrator:
@@ -198,10 +207,27 @@ class Orchestrator:
         while True:
             chain_state.iteration += 1
 
+            if chain_state.iteration > MAX_CHAIN_STEPS:
+                tracer.warning(
+                    EventCategory.ROUTING,
+                    "chain_step_limit_reached",
+                    f"Reached max routing chain steps ({MAX_CHAIN_STEPS})",
+                    data={"max_steps": MAX_CHAIN_STEPS},
+                )
+                response_text = (
+                    "Estoy teniendo problemas para completar esta ruta automáticamente. "
+                    "¿Puedes reformular tu solicitud?"
+                )
+                break
+
             # Determine prompt mode: use ROUTING mode for subsequent iterations
             # after routing has occurred (minimal context for routing decisions)
             prompt_mode = PromptMode.FULL
-            if chain_state.iteration > 1 and routing_occurred_previously:
+            if (
+                chain_state.iteration > 1
+                and routing_occurred_previously
+                and not chain_state.pending_context_requirements
+            ):
                 prompt_mode = PromptMode.ROUTING
 
             chain_state.routing_occurred = False  # Reset for this iteration
@@ -218,6 +244,37 @@ class Orchestrator:
             # Get current flow state
             flow_state = self.state_manager.get_current_flow_state(session)
 
+            # Evaluate deterministic user-turn transitions before calling the LLM.
+            # This enables states with no tools to advance based on declarative conditions.
+            pre_llm_transition = await self._evaluate_state_transitions(
+                session=session,
+                agent=agent,
+                transition_trigger=TransitionTrigger.ON_USER_TURN.value,
+                tracer=tracer,
+                user_message=user_message,
+            )
+            if pre_llm_transition is not None:
+                chain_state.routing_occurred = True
+                routing_occurred_previously = True
+                await self.db.commit()
+                await self.db.refresh(session)
+
+                # If on_enter produced text, return it immediately.
+                if pre_llm_transition:
+                    response_text = pre_llm_transition
+                    chain_state.stable_state_reached = True
+                    break
+
+                # Otherwise continue chain with refreshed state context.
+                continue
+
+            # Refresh flow state in case transition evaluation updated flow data.
+            flow_state = self.state_manager.get_current_flow_state(session)
+            effective_context_requirements = (
+                chain_state.pending_context_requirements or agent.context_requirements
+            )
+            chain_state.pending_context_requirements = []
+
             # Assemble context (ROUTING mode uses minimal context)
             context = self.context_assembler.assemble(
                 session=session,
@@ -227,6 +284,7 @@ class Orchestrator:
                 recent_messages=recent_messages,
                 compacted_history=compacted_history,
                 current_flow_state=flow_state,
+                context_requirements=effective_context_requirements,
                 mode=prompt_mode,
             )
 
@@ -346,8 +404,26 @@ class Orchestrator:
         # Set response on tracer for turn grouping
         tracer.set_response(response_text)
 
-        # Record messages
-        await self._record_messages(session, user_message, response_text, all_tool_calls, agent)
+        # Build debug info
+        processing_time_ms = int((time.time() - start_time) * 1000)
+
+        # Add final trace event
+        tracer.trace(
+            EventCategory.SESSION, "response_ready",
+            f"Response ready after {processing_time_ms}ms",
+            duration_ms=processing_time_ms,
+            data={"iterations": chain_state.iteration, "stable": chain_state.stable_state_reached}
+        )
+
+        # Record messages with complete event trace payload
+        await self._record_messages(
+            session,
+            user_message,
+            response_text,
+            all_tool_calls,
+            agent,
+            event_trace=tracer.to_list(),
+        )
 
         # Update session
         await self.state_manager.increment_message_count(session)
@@ -359,17 +435,6 @@ class Orchestrator:
             session.session_metadata["routing_path"] = chain_state.routing_path[-10:]  # Keep last 10
 
         await self.db.commit()
-
-        # Build debug info
-        processing_time_ms = int((time.time() - start_time) * 1000)
-
-        # Add final trace event
-        tracer.trace(
-            EventCategory.SESSION, "response_ready",
-            f"Response ready after {processing_time_ms}ms",
-            duration_ms=processing_time_ms,
-            data={"iterations": chain_state.iteration, "stable": chain_state.stable_state_reached}
-        )
 
         debug_info = DebugInfo(
             llm_call=debug_llm_call,
@@ -423,8 +488,11 @@ class Orchestrator:
                 await self.state_manager.clear_pending_confirmation(session)
 
                 if result.success:
-                    # LLM handles formatting now
-                    response_text = "Operación completada exitosamente. ¿En qué más puedo ayudarte?"
+                    response_text = self._render_tool_success_message(
+                        agent=agent,
+                        tool=tool,
+                        result=result,
+                    )
 
                     # Handle flow transition if applicable
                     if session.current_flow and tool.flow_transition:
@@ -441,7 +509,10 @@ class Orchestrator:
                     pending["toolName"], pending["toolParams"], session.user_id
                 )
                 await self.state_manager.clear_pending_confirmation(session)
-                response_text = "Listo, la operación se completó exitosamente."
+                if result.success:
+                    response_text = self._render_fallback_success_message(result.data)
+                else:
+                    response_text = f"Lo siento, hubo un error: {result.error}"
 
         elif is_confirmed is False:
             # User declined
@@ -522,16 +593,21 @@ class Orchestrator:
         self,
         session: ConversationSession,
         agent: AgentConfig,
-        tool_name: str,
-        tool_result: dict,
+        transition_trigger: str,
         tracer: EventTracer,
+        tool_name: Optional[str] = None,
+        tool_result: Optional[dict] = None,
+        user_message: Optional[str] = None,
     ) -> Optional[str]:
         """
-        Evaluate declarative transitions for current state after tool execution.
+        Evaluate declarative transitions for the current state.
 
-        This method checks if any state transitions should fire based on:
-        1. tool_trigger matching the executed tool
-        2. condition evaluating to true against stateData + tool result
+        Transition filtering rules:
+        1. transition_trigger must match requested trigger (or be ALWAYS)
+        2. tool_trigger (if present) must match tool_name for tool-result evaluation
+        3. condition must evaluate to true if present
+        4. For user-turn transitions without condition, trigger text must match
+           the current user message intent.
 
         Returns a response message if a transition occurred, None otherwise.
         """
@@ -543,27 +619,93 @@ class Orchestrator:
         if not current_state or not current_state.transitions:
             return None
 
-        # Build evaluation context: existing stateData + tool result
-        state_data = session.current_flow.get("stateData", {})
+        state_data = session.current_flow.get("stateData", {}) or {}
+        tool_result_data = tool_result or {}
+
+        # Enrich evaluation context with deterministic values extracted from user turn.
+        user_turn_data = {}
+        if transition_trigger == TransitionTrigger.ON_USER_TURN.value and user_message:
+            user_turn_data = self._extract_user_turn_data(
+                user_message=user_message,
+                state_data=state_data,
+                transitions=current_state.transitions,
+            )
+            if user_turn_data:
+                await self.state_manager.update_flow_data(session, user_turn_data)
+                state_data = session.current_flow.get("stateData", {}) or {}
+
+        # Build evaluation context: stateData + tool result + user metadata
         eval_context = {
             **state_data,
-            "_tool_result": tool_result,  # Current tool result accessible as _tool_result.key
+            "_tool_result": tool_result_data,
+            "_user_message": user_message or "",
         }
+        if tool_name:
+            eval_context[f"_result_{tool_name}"] = tool_result_data
 
-        # Also store tool result under tool name for easier access
-        eval_context[f"_result_{tool_name}"] = tool_result
+        transitions_in_scope = 0
+        for transition in current_state.transitions:
+            configured_trigger = transition.get(
+                "transition_trigger",
+                TransitionTrigger.ALWAYS.value,
+            )
+            if configured_trigger not in {
+                TransitionTrigger.ON_USER_TURN.value,
+                TransitionTrigger.ON_TOOL_RESULT.value,
+                TransitionTrigger.ALWAYS.value,
+            }:
+                configured_trigger = TransitionTrigger.ALWAYS.value
+
+            if configured_trigger in {
+                transition_trigger,
+                TransitionTrigger.ALWAYS.value,
+            }:
+                transitions_in_scope += 1
 
         # Evaluate each transition in order (first match wins)
         for transition in current_state.transitions:
+            configured_trigger = transition.get(
+                "transition_trigger",
+                TransitionTrigger.ALWAYS.value,
+            )
+            if configured_trigger not in {
+                TransitionTrigger.ON_USER_TURN.value,
+                TransitionTrigger.ON_TOOL_RESULT.value,
+                TransitionTrigger.ALWAYS.value,
+            }:
+                configured_trigger = TransitionTrigger.ALWAYS.value
+
+            if configured_trigger not in {
+                transition_trigger,
+                TransitionTrigger.ALWAYS.value,
+            }:
+                continue
+
             # Check tool_trigger match (if specified)
-            tool_trigger = transition.get("tool_trigger")
-            if tool_trigger and tool_trigger != tool_name:
-                continue  # This transition doesn't match this tool
+            transition_tool_trigger = transition.get("tool_trigger")
+            if transition_trigger == TransitionTrigger.ON_TOOL_RESULT.value:
+                if transition_tool_trigger and transition_tool_trigger != tool_name:
+                    continue
+            elif transition_tool_trigger:
+                # User-turn evaluations should not trigger tool-specific transitions.
+                continue
 
             # Evaluate condition (if specified)
             condition = transition.get("condition")
-            if condition and not evaluate_condition(condition, eval_context):
-                continue  # Condition not satisfied
+            condition_result = True
+            if condition:
+                condition_result = evaluate_condition(condition, eval_context)
+                if not condition_result:
+                    continue
+            elif transition_trigger == TransitionTrigger.ON_USER_TURN.value:
+                trigger_name = transition.get("trigger", "")
+                if not self._match_user_turn_trigger(
+                    trigger_name=trigger_name,
+                    user_message=user_message or "",
+                    state_data=state_data,
+                    transitions_in_scope=transitions_in_scope,
+                ):
+                    continue
 
             # Transition matches!
             target_state_id = transition.get("target")
@@ -574,7 +716,7 @@ class Orchestrator:
             trigger_name = transition.get("trigger", "unnamed")
             logger.info(
                 f"Declarative transition triggered: {trigger_name} -> {target_state_id} "
-                f"(tool: {tool_name}, condition: {condition})"
+                f"(trigger_type: {transition_trigger}, tool: {tool_name}, condition: {condition})"
             )
 
             # Trace the transition
@@ -584,9 +726,13 @@ class Orchestrator:
                 f"Transition '{trigger_name}' -> {target_state_id}",
                 data={
                     "trigger": trigger_name,
+                    "transition_trigger": configured_trigger,
                     "tool_name": tool_name,
                     "condition": condition,
+                    "condition_result": condition_result,
                     "target_state": target_state_id,
+                    "from_state": session.current_flow.get("currentState"),
+                    "to_state": target_state_id,
                 }
             )
 
@@ -602,7 +748,8 @@ class Orchestrator:
                 return None
 
             # Store the tool result in flow data before transitioning
-            await self.state_manager.update_flow_data(session, tool_result)
+            if tool_result_data:
+                await self.state_manager.update_flow_data(session, tool_result_data)
 
             # Perform the transition
             await self.state_manager.transition_state(session, target_state_id, target_state)
@@ -612,7 +759,7 @@ class Orchestrator:
             if target_state.on_enter:
                 response_text = await self._handle_on_enter(target_state, session, agent)
 
-            return response_text if response_text else ""  # Return empty string to signal transition occurred
+            return response_text if response_text else ""
 
         # No transition matched
         return None
@@ -630,6 +777,181 @@ class Orchestrator:
             return None
 
         return self.state_manager.get_flow_state(agent_id, flow_id, state_id)
+
+    def _extract_user_turn_data(
+        self,
+        user_message: str,
+        state_data: dict,
+        transitions: List[dict],
+    ) -> dict:
+        """Extract deterministic values from user input for condition evaluation."""
+        extracted: dict[str, Any] = {}
+        lower_message = user_message.lower()
+
+        required_vars = self._collect_transition_variables(transitions)
+
+        # Reuse confirmation classifier for common yes/no transitions.
+        confirm_classification = self.tool_executor.classify_user_confirmation(user_message)
+        if confirm_classification is True:
+            for key in ("confirmed", "user_confirms", "approved", "accept", "accepted"):
+                if key in required_vars and key not in state_data:
+                    extracted[key] = True
+            if "user_cancels" in required_vars and "user_cancels" not in state_data:
+                extracted["user_cancels"] = False
+        elif confirm_classification is False:
+            for key in ("user_cancels", "cancelled", "declined", "rejected"):
+                if key in required_vars and key not in state_data:
+                    extracted[key] = True
+            if "user_confirms" in required_vars and "user_confirms" not in state_data:
+                extracted["user_confirms"] = False
+
+        if "retry" in required_vars and "retry" not in state_data:
+            retry_tokens = ("retry", "try again", "intenta", "intentar", "otra vez")
+            extracted["retry"] = any(token in lower_message for token in retry_tokens)
+
+        numeric_value = self._extract_first_number(user_message)
+        if numeric_value is not None:
+            if "amount" in required_vars and "amount" not in state_data:
+                extracted["amount"] = numeric_value
+            if "amount_usd" in required_vars and "amount_usd" not in state_data:
+                extracted["amount_usd"] = numeric_value
+            if "requested_amount" in required_vars and "requested_amount" not in state_data:
+                extracted["requested_amount"] = numeric_value
+
+            if "term_weeks" in required_vars and "term_weeks" not in state_data:
+                int_value = int(numeric_value)
+                if int_value in {4, 8, 12, 16, 20, 26}:
+                    extracted["term_weeks"] = int_value
+
+        return extracted
+
+    @staticmethod
+    def _collect_transition_variables(transitions: List[dict]) -> set[str]:
+        """Collect variable names used in conditions."""
+        variables: set[str] = set()
+        token_pattern = re.compile(r"[A-Za-z_][A-Za-z0-9_\.]*")
+        ignored = {
+            "and",
+            "or",
+            "not",
+            "in",
+            "is",
+            "none",
+            "null",
+            "true",
+            "false",
+            "stateData",
+            "context",
+        }
+
+        for transition in transitions:
+            condition = transition.get("condition")
+            if not condition:
+                continue
+            for token in token_pattern.findall(condition):
+                root = token.split(".")[0]
+                if root.lower() in ignored:
+                    continue
+                if root.startswith("_"):
+                    continue
+                variables.add(root)
+        return variables
+
+    @staticmethod
+    def _extract_first_number(user_message: str) -> Optional[float]:
+        """Extract first numeric token from user text."""
+        normalized = user_message.replace(",", "")
+        match = re.search(r"\d+(?:\.\d+)?", normalized)
+        if not match:
+            return None
+        try:
+            return float(match.group(0))
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _match_user_turn_trigger(
+        trigger_name: str,
+        user_message: str,
+        state_data: dict,
+        transitions_in_scope: int,
+    ) -> bool:
+        """
+        Heuristic matcher for trigger labels when no explicit condition is provided.
+
+        If only one candidate transition exists, allow it.
+        If multiple candidates exist, only match clear intent labels.
+        """
+        if transitions_in_scope <= 1:
+            return True
+
+        normalized_trigger = (trigger_name or "").lower()
+        message = (user_message or "").lower()
+
+        if any(token in normalized_trigger for token in ("confirm", "approved", "accept")):
+            return any(token in message for token in ("si", "sí", "yes", "confirm", "dale", "ok"))
+
+        if any(token in normalized_trigger for token in ("cancel", "decline", "reject")):
+            return any(token in message for token in ("no", "cancel", "decline", "rechaz"))
+
+        if "retry" in normalized_trigger:
+            return any(token in message for token in ("retry", "try again", "otra vez", "intenta"))
+
+        if any(token in normalized_trigger for token in ("modify", "edit", "change", "update")):
+            return any(token in message for token in ("change", "edit", "modify", "modificar", "cambiar"))
+
+        if "amount" in normalized_trigger:
+            return bool(re.search(r"\d", message))
+
+        if "term" in normalized_trigger:
+            return any(f" {weeks}" in f" {message}" for weeks in ("4", "8", "12", "16", "20", "26"))
+
+        # For ambiguous multi-transition states, avoid implicit transition.
+        return False
+
+    def _render_tool_success_message(
+        self,
+        agent: AgentConfig,
+        tool: ToolConfig,
+        result: ToolResult,
+    ) -> str:
+        """Render deterministic success message using templates or normalized fields."""
+        if isinstance(result.data, dict):
+            template = self.template_renderer.find_matching_template(
+                templates=agent.response_templates,
+                trigger_type="tool_success",
+                tool_name=tool.name,
+            )
+            if template:
+                rendered = self.template_renderer.apply_template(template, result.data)
+                if rendered:
+                    return rendered
+
+            return self._render_fallback_success_message(result.data)
+
+        return "Operación completada exitosamente. ¿En qué más puedo ayudarte?"
+
+    @staticmethod
+    def _render_fallback_success_message(payload: Any) -> str:
+        """Build deterministic fallback success text from transaction payload fields."""
+        if not isinstance(payload, dict):
+            return "Operación completada exitosamente. ¿En qué más puedo ayudarte?"
+
+        reference = payload.get("reference") or payload.get("transaction_id")
+        amount = payload.get("amount")
+        currency = payload.get("currency")
+
+        parts = ["Operación completada exitosamente."]
+        if amount is not None and currency:
+            parts.append(f"Monto: {amount} {currency}.")
+        elif amount is not None:
+            parts.append(f"Monto: {amount}.")
+
+        if reference:
+            parts.append(f"Referencia: {reference}.")
+
+        parts.append("¿En qué más puedo ayudarte?")
+        return " ".join(parts)
 
     async def _handle_on_enter(
         self,
@@ -775,6 +1097,7 @@ class Orchestrator:
                             data={"state_changed": True}
                         )
                         chain_state.routing_occurred = True
+                        chain_state.pending_context_requirements = routing_outcome.context_requirements or []
                         await self.db.commit()
 
                         # Refresh session and get new agent
@@ -801,7 +1124,7 @@ class Orchestrator:
                 return result.confirmation_message
 
             # Handle flow transitions (explicit tool-level flow_transition)
-            if result and result.success and session.current_flow:
+            if result and session.current_flow:
                 tool = self._get_tool_by_name(agent, tool_call.name)
                 if tool and tool.flow_transition:
                     transition_result = await self._handle_flow_transition(
@@ -811,14 +1134,21 @@ class Orchestrator:
                         return transition_result
 
             # Handle declarative state transitions (state-level transitions list)
-            if result and result.success and session.current_flow:
+            if result and session.current_flow:
                 tool_result_data = result.data if isinstance(result.data, dict) else {}
+                tool_result_data = dict(tool_result_data)
+                tool_result_data.setdefault("success", result.success)
+                tool_result_data.setdefault("tool_success", result.success)
+                if "topup" in tool_call.name:
+                    tool_result_data.setdefault("topup_success", result.success)
+
                 transition_result = await self._evaluate_state_transitions(
                     session=session,
                     agent=agent,
+                    transition_trigger=TransitionTrigger.ON_TOOL_RESULT.value,
+                    tracer=tracer,
                     tool_name=tool_call.name,
                     tool_result=tool_result_data,
-                    tracer=tracer,
                 )
                 if transition_result is not None:  # Empty string means transition occurred
                     # Signal that state changed so chain continues with new context
@@ -1060,6 +1390,7 @@ class Orchestrator:
         assistant_message: str,
         tool_calls: List[dict],
         agent: AgentConfig,
+        event_trace: Optional[List[dict]] = None,
     ) -> None:
         """Record messages to the database."""
         # User message
@@ -1082,6 +1413,7 @@ class Orchestrator:
                 "agentName": agent.name,
                 "toolsCalled": tool_calls,
                 "flowState": session.current_flow.get("currentState") if session.current_flow else None,
+                "eventTrace": event_trace or [],
             },
         )
         self.db.add(assistant_msg)

@@ -64,14 +64,20 @@ class MockWalletService:
         current_balance = self._balances.get(user, 45.50)
         new_balance = current_balance + amount
         self._balances[user] = new_balance
+        transaction_id = f"WAL{_random_string(8)}"
+        processed_at = datetime.utcnow().isoformat()
 
         return {
-            "transactionId": f"WAL{_random_string(8)}",
+            "transactionId": transaction_id,
             "amount": amount,
             "previousBalance": current_balance,
             "newBalance": new_balance,
             "status": "completed",
-            "processedAt": datetime.utcnow().isoformat(),
+            "processedAt": processed_at,
+            "transaction_id": transaction_id,
+            "reference": transaction_id,
+            "currency": "USD",
+            "timestamp": processed_at,
         }
 
     def get_transactions(self, user_id: str, limit: int = 10) -> list:

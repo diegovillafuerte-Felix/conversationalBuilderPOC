@@ -11,6 +11,7 @@ const WELCOME_MESSAGE = {
 export const useChatStore = create((set, get) => ({
   messages: [WELCOME_MESSAGE],
   debugEvents: [], // Store all debug events for the debug panel
+  eventTrace: [], // Store event trace for the trace panel
   sessionId: null,
   userId: 'user_demo',
   agentName: 'Felix Assistant',
@@ -78,6 +79,13 @@ export const useChatStore = create((set, get) => ({
         });
       }
 
+      // Append event trace if present
+      if (data.debug?.event_trace && data.debug.event_trace.length > 0) {
+        set((state) => ({
+          eventTrace: [...state.eventTrace, ...data.debug.event_trace],
+        }));
+      }
+
       set({
         sessionId: data.session_id,
         agentName: data.agent_name,
@@ -130,6 +138,7 @@ export const useChatStore = create((set, get) => ({
     set({
       messages: [WELCOME_MESSAGE],
       debugEvents: [],
+      eventTrace: [],
       sessionId: null,
       agentName: 'Felix Assistant',
       pendingConfirmation: null,

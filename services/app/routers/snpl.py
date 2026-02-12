@@ -39,6 +39,7 @@ class SubmitApplicationRequest(BaseModel):
 
 class MakePaymentRequest(BaseModel):
     """Request to make a payment."""
+    loan_id: Optional[str] = None
     amount: float = Field(gt=0)
     payment_method_id: str = "pm_default"
 
@@ -208,15 +209,19 @@ async def get_payment_history(
 
 @router.post("/payments")
 async def make_snpl_payment(
-    loan_id: str,
     request: MakePaymentRequest,
+    loan_id: Optional[str] = None,
     x_user_id: str = Header("user_demo", alias="X-User-Id"),
     accept_language: str = Header("es", alias="Accept-Language"),
 ) -> ServiceResponse:
     """Make a payment on a loan."""
+    resolved_loan_id = loan_id or request.loan_id
+    if not resolved_loan_id:
+        raise HTTPException(status_code=400, detail={"error": "loan_id is required"})
+
     service = get_service(accept_language)
     result = service.make_snpl_payment(
-        loan_id=loan_id,
+        loan_id=resolved_loan_id,
         amount=request.amount,
         payment_method_id=request.payment_method_id,
         user_id=x_user_id,

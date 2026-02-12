@@ -3,7 +3,7 @@
   "name": "Bill Pay Agent",
   "description": "I'm the Felix bill payment specialist. I can help you with:\n- Paying services like CFE (electricity), Telmex, Izzi, etc.\n- Viewing your saved services\n- Checking the amount due for a service\n- Viewing your payment history\n\nPayments are applied in 24-48 hours.",
   "model_config": {
-    "model": "gpt-4o",
+    "model": "gpt-5.2",
     "temperature": 0.5,
     "maxTokens": 1024
   },

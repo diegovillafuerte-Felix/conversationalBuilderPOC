@@ -53,61 +53,31 @@ export default function UserSidebar() {
   }
 
   return (
-    <div className="user-sidebar">
-      <h3>Usuario</h3>
-      <select value={userId} onChange={handleUserChange} className="user-select">
-        {users.map((user) => (
-          <option key={user.user_id} value={user.user_id}>
-            {user.name}
-          </option>
-        ))}
-      </select>
+    <div className="user-topbar">
+      <div className="user-select-section">
+        <label>Usuario:</label>
+        <select value={userId} onChange={handleUserChange} className="user-select">
+          {users.map((user) => (
+            <option key={user.user_id} value={user.user_id}>
+              {user.name}
+            </option>
+          ))}
+        </select>
+      </div>
 
       {userContext && (
-        <div className="user-context">
-          <div className="context-section">
-            <strong>{userContext.profile?.name || 'Unknown'}</strong>
-            <p>Miembro desde: {userContext.profile?.memberSince || 'N/A'}</p>
+        <div className="user-context-horizontal">
+          <div className="context-item">
+            <span className="context-label">Nombre:</span>
+            <span className="context-value">{userContext.profile?.name || 'Unknown'}</span>
           </div>
 
-          {userContext.product_summaries?.wallet && (
-            <div className="context-section">
-              <div className="context-label">Cartera</div>
-              <div className="context-value">
-                ${userContext.product_summaries.wallet.currentBalance?.toFixed(2) || '0.00'}
-              </div>
-            </div>
-          )}
-
-          {userContext.product_summaries?.credit?.hasActiveCredit && (
-            <div className="context-section">
-              <div className="context-label">Crédito</div>
-              <div className="context-value">
-                ${userContext.product_summaries.credit.currentBalance?.toFixed(2) || '0.00'} / ${userContext.product_summaries.credit.creditLimit?.toFixed(2) || '0.00'}
-              </div>
-            </div>
-          )}
-
-          {userContext.product_summaries?.remittances && (
-            <div className="context-section">
-              <div className="context-label">Remesas</div>
-              <div className="context-value">
-                {userContext.product_summaries.remittances.lifetimeCount || 0} enviadas
-              </div>
-              {userContext.product_summaries.remittances.lastTransactionAt && (
-                <div className="context-value">
-                  Última: {userContext.product_summaries.remittances.lastTransactionAt}
-                </div>
-              )}
-            </div>
-          )}
-
           {userContext.profile?.language && (
-            <div className="context-section">
-              <div className="context-label">Idioma</div>
-              <div className="context-value">
+            <div className="context-item">
+              <span className="context-label">Idioma:</span>
+              <span className="context-value">
                 {userContext.profile.language === 'es' ? 'Español' : 'English'}
-              </div>
+              </span>
             </div>
           )}
         </div>

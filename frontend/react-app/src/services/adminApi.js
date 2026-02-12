@@ -1,54 +1,61 @@
 const API_BASE = '/api/admin';
+const CHAT_API_BASE = '/api/chat';
+
+// Dev token for local development - in production, this should come from auth
+const DEV_TOKEN = 'dev-token';
 
 async function apiRequest(endpoint, options = {}) {
   const url = `${API_BASE}${endpoint}`;
-  const config = {
+  const { method = 'GET', body } = options;
+  const response = await fetch(url, {
+    method,
     headers: {
       'Content-Type': 'application/json',
+      'Authorization': `Bearer ${DEV_TOKEN}`,
     },
-    ...options,
-  };
-
-  const response = await fetch(url, config);
+    body: body ? JSON.stringify(body) : undefined,
+  });
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
     throw new Error(error.detail || `HTTP ${response.status}`);
   }
 
-  if (response.status === 204) {
-    return null;
+  return response.json();
+}
+
+export const adminApi = {
+  getAgents: () => apiRequest('/agents'),
+  getAgent: (id) => apiRequest(`/agents/${id}`),
+  reloadConfig: () => apiRequest('/reload-config', { method: 'POST' }),
+};
+
+async function chatApiRequest(endpoint) {
+  const response = await fetch(`${CHAT_API_BASE}${endpoint}`, {
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
+    throw new Error(error.detail || `HTTP ${response.status}`);
   }
 
   return response.json();
 }
 
-export const adminApi = {
-  // Agents
-  getAgents: () => apiRequest('/agents'),
-  getAgent: (id) => apiRequest(`/agents/${id}`),
-  createAgent: (data) => apiRequest('/agents', { method: 'POST', body: JSON.stringify(data) }),
-  updateAgent: (id, data) => apiRequest(`/agents/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-  deleteAgent: (id) => apiRequest(`/agents/${id}`, { method: 'DELETE' }),
-  cloneAgent: (id) => apiRequest(`/agents/${id}/clone`, { method: 'POST' }),
-
-  // Tools
-  createTool: (agentId, data) => apiRequest(`/agents/${agentId}/tools`, { method: 'POST', body: JSON.stringify(data) }),
-  updateTool: (id, data) => apiRequest(`/tools/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-  deleteTool: (id) => apiRequest(`/tools/${id}`, { method: 'DELETE' }),
-
-  // Subflows
-  createSubflow: (agentId, data) => apiRequest(`/agents/${agentId}/subflows`, { method: 'POST', body: JSON.stringify(data) }),
-  updateSubflow: (id, data) => apiRequest(`/subflows/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-  deleteSubflow: (id) => apiRequest(`/subflows/${id}`, { method: 'DELETE' }),
-
-  // States
-  createState: (subflowId, data) => apiRequest(`/subflows/${subflowId}/states`, { method: 'POST', body: JSON.stringify(data) }),
-  updateState: (id, data) => apiRequest(`/states/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-  deleteState: (id) => apiRequest(`/states/${id}`, { method: 'DELETE' }),
-
-  // Templates
-  createTemplate: (agentId, data) => apiRequest(`/agents/${agentId}/templates`, { method: 'POST', body: JSON.stringify(data) }),
-  updateTemplate: (id, data) => apiRequest(`/templates/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-  deleteTemplate: (id) => apiRequest(`/templates/${id}`, { method: 'DELETE' }),
+export const conversationApi = {
+  listConversations: (params = {}) => {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        query.set(key, String(value));
+      }
+    });
+    const suffix = query.toString() ? `?${query}` : '';
+    return chatApiRequest(`/conversations${suffix}`);
+  },
+  getConversation: (id) => chatApiRequest(`/conversations/${id}`),
+  getConversationEvents: (id) => chatApiRequest(`/conversations/${id}/events`),
 };

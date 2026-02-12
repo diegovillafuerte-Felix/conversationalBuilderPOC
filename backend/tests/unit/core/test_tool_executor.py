@@ -4,7 +4,7 @@ import pytest
 from uuid import uuid4
 
 from app.core.tool_executor import ToolExecutor, ToolResult
-from app.models.agent import Tool
+from app.core.config_types import ToolConfig
 from app.models.session import ConversationSession
 
 
@@ -123,16 +123,14 @@ class TestToolExecutorMockExecution:
 
 
 class TestToolExecutorWithTool:
-    """Test cases for tool execution with Tool model."""
+    """Test cases for tool execution with ToolConfig."""
 
     @pytest.mark.asyncio
     async def test_execute_requires_confirmation(self):
         """Test tool execution when confirmation is required."""
         executor = ToolExecutor()
 
-        tool = Tool(
-            id=uuid4(),
-            agent_id=uuid4(),
+        tool = ToolConfig(
             name="send_topup",
             description="Send a topup",
             parameters=[],
@@ -159,9 +157,7 @@ class TestToolExecutorWithTool:
         """Test tool execution with skip_confirmation flag."""
         executor = ToolExecutor()
 
-        tool = Tool(
-            id=uuid4(),
-            agent_id=uuid4(),
+        tool = ToolConfig(
             name="get_carriers",
             description="Get available carriers",
             parameters=[],
@@ -181,6 +177,33 @@ class TestToolExecutorWithTool:
 
         # Should not require confirmation when skip_confirmation is True
         assert result.requires_confirmation is False
+
+    @pytest.mark.asyncio
+    async def test_confirmation_template_supports_single_and_dollar_placeholders(self):
+        """Confirmation templates should support {var} and ${var} syntax."""
+        executor = ToolExecutor()
+
+        tool = ToolConfig(
+            name="add_funds",
+            description="Add wallet funds",
+            parameters=[],
+            requires_confirmation=True,
+            confirmation_template="Confirm adding ${amount} to {account}?",
+        )
+
+        session = ConversationSession(user_id="test_user")
+        session.agent_stack = [{"agentId": str(uuid4())}]
+
+        result = await executor.execute(
+            tool=tool,
+            params={"amount": 25, "account": "wallet"},
+            session=session,
+        )
+
+        assert result.requires_confirmation is True
+        # ${amount} regex consumes the $ sign — full match replaced with value
+        assert "25" in result.confirmation_message
+        assert "wallet" in result.confirmation_message
 
 
 class TestToolExecutorLanguage:

@@ -1,0 +1,73 @@
+{
+  "id": "wallet",
+  "name": "Wallet Agent",
+  "description": "I'm the Felix wallet specialist. I can help you with:\n- Checking your wallet balance\n- Reviewing wallet transactions\n- Adding funds\n- Managing payment methods",
+  "model_config": {
+    "model": "gpt-5.2",
+    "temperature": 0.4,
+    "maxTokens": 1024
+  },
+  "navigation": {
+    "canGoUp": true,
+    "canGoHome": true,
+    "canEscalate": true
+  },
+  "parent_agent": "felix",
+  "context_requirements": [
+    {
+      "type": "product_summary",
+      "productFilter": "wallet"
+    }
+  ],
+  "tools": [
+    {
+      "name": "get_balance",
+      "description": "Get the user's current wallet balance.",
+      "parameters": [],
+      "side_effects": "read",
+      "requires_confirmation": false
+    },
+    {
+      "name": "get_transactions",
+      "description": "Get the user's recent wallet transactions.",
+      "parameters": [
+        {
+          "name": "limit",
+          "type": "number",
+          "required": false,
+          "description": "Maximum number of transactions to return"
+        }
+      ],
+      "side_effects": "read",
+      "requires_confirmation": false
+    },
+    {
+      "name": "get_payment_methods",
+      "description": "Get payment methods linked to wallet.",
+      "parameters": [],
+      "side_effects": "read",
+      "requires_confirmation": false
+    },
+    {
+      "name": "add_funds",
+      "description": "Add funds to the wallet from a linked payment method.",
+      "parameters": [
+        {
+          "name": "amount",
+          "type": "number",
+          "required": true,
+          "description": "Amount in USD to add"
+        },
+        {
+          "name": "payment_method_id",
+          "type": "string",
+          "required": false,
+          "description": "Linked payment method ID"
+        }
+      ],
+      "requires_confirmation": true,
+      "confirmation_template": "Confirm adding ${amount} USD to your wallet?",
+      "side_effects": "financial"
+    }
+  ]
+}

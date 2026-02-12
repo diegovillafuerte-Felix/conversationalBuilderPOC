@@ -13,16 +13,10 @@ from app.core.config_loader import (
     get_agent_ids,
     agent_exists,
     reload_configs,
-    load_shadow_service_config,
-    save_shadow_service_config,
-    get_shadow_subagent_config,
-    update_shadow_subagent_config,
-    add_shadow_subagent,
-    delete_shadow_subagent,
 )
 from app.database import get_db
-from app.seed.agents import reseed_agents_from_json
 from app.auth import verify_admin_token
+from app.core.agent_registry import get_agent_registry, AgentRegistryError
 
 logger = logging.getLogger(__name__)
 
@@ -47,44 +41,32 @@ def find_item_by_name(items: list, name: str) -> tuple[int, Optional[dict]]:
 
 @router.post("/reload-config")
 async def reload_config(_token: str = Depends(verify_admin_token)):
-    """Hot-reload all configs from JSON files (clears in-memory cache)."""
-    reload_configs()
-    agent_ids = get_agent_ids()
-    return {
-        "message": "Configs reloaded successfully",
-        "agents": agent_ids,
-        "count": len(agent_ids)
-    }
-
-
-@router.post("/sync-to-db")
-async def sync_to_db(
-    db: AsyncSession = Depends(get_db),
-    _token: str = Depends(verify_admin_token)
-):
     """
-    Sync JSON configs to database for runtime.
+    Hot-reload all configs from JSON files.
 
-    This deletes all agent-related data in DB and re-seeds from JSON files.
+    This reloads both the JSON cache and the AgentRegistry.
     Use this after editing agent configs to update the runtime.
 
-    WARNING: This will reset all agent UUIDs. Active sessions may break.
+    Unlike the old sync-to-db endpoint, this doesn't touch the database
+    since agent configs are now loaded directly from JSON.
     """
     try:
-        # Clear caches first
+        # Clear JSON config cache
         reload_configs()
 
-        # Reseed database from JSON
-        stats = await reseed_agents_from_json(db)
+        # Reload agent registry (validates configs)
+        registry = get_agent_registry()
+        registry.reload()
 
+        agent_ids = get_agent_ids()
         return {
-            "message": "Database synced with JSON configs",
-            "stats": stats,
-            "agents": get_agent_ids()
+            "message": "Configs reloaded successfully",
+            "agents": agent_ids,
+            "count": len(agent_ids)
         }
-    except Exception as e:
-        logger.error(f"Failed to sync to DB: {e}")
-        raise HTTPException(status_code=500, detail=f"Sync failed: {str(e)}")
+    except AgentRegistryError as e:
+        logger.error(f"Failed to reload configs: {e}")
+        raise HTTPException(status_code=500, detail=f"Reload failed: {str(e)}")
 
 
 # ============================================================================
@@ -126,7 +108,6 @@ async def get_agent(agent_id: str, _token: str = Depends(verify_admin_token)):
         "system_prompt_addition": config.get("system_prompt_addition", ""),
         "model_config_json": config.get("model_config", {}),
         "navigation_tools": config.get("navigation", {}),
-        "context_requirements": config.get("context_requirements", []),
         "is_active": config.get("is_active", True),
         # Nested entities
         "tools": config.get("tools", []),
@@ -610,88 +591,3 @@ async def delete_template(
             return {"message": "Template deleted", "template": deleted}
 
     raise HTTPException(status_code=404, detail="Template not found")
-
-
-# ============================================================================
-# Shadow Service Endpoints
-# ============================================================================
-
-@router.get("/shadow-service")
-async def get_shadow_service_config_endpoint(_token: str = Depends(verify_admin_token)):
-    """Get full shadow service configuration."""
-    return load_shadow_service_config()
-
-
-@router.put("/shadow-service")
-async def update_shadow_service_config_endpoint(
-    config: dict = Body(...),
-    _token: str = Depends(verify_admin_token)
-):
-    """Update shadow service global settings."""
-    current = load_shadow_service_config()
-
-    # Update only global settings, preserve subagents
-    if "enabled" in config:
-        current["enabled"] = config["enabled"]
-    if "global_cooldown_messages" in config:
-        current["global_cooldown_messages"] = config["global_cooldown_messages"]
-    if "max_messages_per_response" in config:
-        current["max_messages_per_response"] = config["max_messages_per_response"]
-
-    save_shadow_service_config(current)
-    return {"message": "Shadow service config updated", **current}
-
-
-@router.get("/shadow-service/subagents/{subagent_id}")
-async def get_shadow_subagent_endpoint(
-    subagent_id: str,
-    _token: str = Depends(verify_admin_token)
-):
-    """Get a specific shadow subagent configuration."""
-    subagent = get_shadow_subagent_config(subagent_id)
-    if not subagent:
-        raise HTTPException(status_code=404, detail="Subagent not found")
-    return subagent
-
-
-@router.put("/shadow-service/subagents/{subagent_id}")
-async def update_shadow_subagent_endpoint(
-    subagent_id: str,
-    updates: dict = Body(...),
-    _token: str = Depends(verify_admin_token)
-):
-    """Update a shadow subagent configuration."""
-    # Ensure id matches
-    updates["id"] = subagent_id
-
-    if not update_shadow_subagent_config(subagent_id, updates):
-        raise HTTPException(status_code=404, detail="Subagent not found")
-
-    return {"message": "Subagent updated", **get_shadow_subagent_config(subagent_id)}
-
-
-@router.post("/shadow-service/subagents")
-async def create_shadow_subagent_endpoint(
-    subagent: dict = Body(...),
-    _token: str = Depends(verify_admin_token)
-):
-    """Create a new shadow subagent."""
-    if "id" not in subagent:
-        raise HTTPException(status_code=400, detail="Subagent must have an 'id' field")
-
-    try:
-        add_shadow_subagent(subagent)
-        return {"message": "Subagent created", **subagent}
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
-@router.delete("/shadow-service/subagents/{subagent_id}")
-async def delete_shadow_subagent_endpoint(
-    subagent_id: str,
-    _token: str = Depends(verify_admin_token)
-):
-    """Delete a shadow subagent."""
-    if not delete_shadow_subagent(subagent_id):
-        raise HTTPException(status_code=404, detail="Subagent not found")
-    return {"message": f"Subagent '{subagent_id}' deleted successfully"}

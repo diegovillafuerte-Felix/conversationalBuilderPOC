@@ -23,6 +23,14 @@ class PromptMode(Enum):
     ROUTING = "routing"
 
 
+class TransitionTrigger(Enum):
+    """When a declarative transition should be evaluated."""
+
+    ON_USER_TURN = "on_user_turn"
+    ON_TOOL_RESULT = "on_tool_result"
+    ALWAYS = "always"
+
+
 @dataclass
 class ToolConfig:
     """Tool definition loaded from JSON config."""
@@ -117,12 +125,45 @@ class SubflowStateConfig:
     @classmethod
     def from_dict(cls, data: dict) -> "SubflowStateConfig":
         """Create from JSON state config."""
+        raw_transitions = data.get("transitions", [])
+        has_tool_result_signal = False
+        for transition in raw_transitions:
+            if transition.get("tool_trigger"):
+                has_tool_result_signal = True
+                break
+            condition = transition.get("condition")
+            if isinstance(condition, str) and ("_tool_result" in condition or "_result_" in condition):
+                has_tool_result_signal = True
+                break
+
+        transitions = []
+        for transition in raw_transitions:
+            normalized = dict(transition)
+
+            # Backwards-compatible defaulting:
+            # - Tool-triggered transitions fire after tool execution
+            # - Conditions referencing tool result fire after tool execution
+            # - All other transitions fire on user turn
+            if "transition_trigger" not in normalized:
+                if normalized.get("tool_trigger"):
+                    normalized["transition_trigger"] = TransitionTrigger.ON_TOOL_RESULT.value
+                elif isinstance(normalized.get("condition"), str) and (
+                    "_tool_result" in normalized["condition"] or "_result_" in normalized["condition"]
+                ):
+                    normalized["transition_trigger"] = TransitionTrigger.ON_TOOL_RESULT.value
+                elif has_tool_result_signal and not normalized.get("condition"):
+                    normalized["transition_trigger"] = TransitionTrigger.ON_TOOL_RESULT.value
+                else:
+                    normalized["transition_trigger"] = TransitionTrigger.ON_USER_TURN.value
+
+            transitions.append(normalized)
+
         return cls(
             state_id=data["id"],
             name=data.get("name", data["id"]),
             agent_instructions=data.get("agent_instructions", ""),
             state_tools=data.get("state_tools", []),
-            transitions=data.get("transitions", []),
+            transitions=transitions,
             on_enter=data.get("on_enter"),
             is_final=data.get("is_final", False),
         )

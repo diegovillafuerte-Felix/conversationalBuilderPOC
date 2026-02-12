@@ -3,7 +3,7 @@
 import re
 import logging
 from typing import Optional, List
-from app.models.agent import ResponseTemplate, Tool
+from app.core.config_types import ResponseTemplateConfig
 
 logger = logging.getLogger(__name__)
 
@@ -15,31 +15,86 @@ class TemplateRenderer:
         """
         Render a template with data substitution.
 
-        Supports {{variable}} syntax.
+        Supports `{{variable}}`, `{variable}`, and `${variable}` placeholder syntax.
         """
+        rendered = template
+
+        # Replace most explicit form first to avoid overlaps.
+        rendered = self._replace_placeholders(
+            rendered,
+            r"\{\{(\w+(?:\.\w+)*)\}\}",
+            "{{{{{key}}}}}",
+            data,
+        )
+        rendered = self._replace_placeholders(
+            rendered,
+            r"\$\{(\w+(?:\.\w+)*)\}",
+            "${{{key}}}",
+            data,
+        )
+        rendered = self._replace_placeholders(
+            rendered,
+            r"(?<!\{)\{(\w+(?:\.\w+)*)\}(?!\})",
+            "{{{key}}}",
+            data,
+        )
+
+        # Strip any remaining unresolved placeholders so users don't see raw {var} text
+        rendered = re.sub(r"\{\{(\w+(?:\.\w+)*)\}\}", "", rendered)
+        rendered = re.sub(r"\$\{(\w+(?:\.\w+)*)\}", "", rendered)
+        rendered = re.sub(r"(?<!\{)\{(\w+(?:\.\w+)*)\}(?!\})", "", rendered)
+
+        return rendered
+
+    def _replace_placeholders(
+        self,
+        template: str,
+        pattern: str,
+        missing_format: str,
+        data: dict,
+    ) -> str:
+        """Replace placeholders matching a pattern."""
+
         def replace_placeholder(match):
             key = match.group(1)
-            # Support nested keys with dot notation (e.g., {{recipient.name}})
-            keys = key.split(".")
-            value = data
-            for k in keys:
-                if isinstance(value, dict) and k in value:
-                    value = value[k]
-                else:
-                    return f"{{{{{key}}}}}"  # Return original if not found
+            value, found = self._resolve_template_key(data, key)
+            if not found:
+                return missing_format.format(key=key)
             return str(value)
 
-        rendered = re.sub(r"\{\{(\w+(?:\.\w+)*)\}\}", replace_placeholder, template)
-        return rendered
+        return re.sub(pattern, replace_placeholder, template)
+
+    def _resolve_template_key(self, data: dict, key: str) -> tuple[object, bool]:
+        """Resolve nested dictionary keys via dot notation."""
+        keys = key.split(".")
+        value = data
+        for part in keys:
+            if isinstance(value, dict) and part in value:
+                value = value[part]
+            else:
+                return None, False
+        return value, True
+
+    def find_unresolved_placeholders(self, template: str) -> list[str]:
+        """Find placeholders that remained unresolved after rendering."""
+        placeholders = []
+        patterns = (
+            r"\{\{(\w+(?:\.\w+)*)\}\}",
+            r"\$\{(\w+(?:\.\w+)*)\}",
+            r"(?<!\{)\{(\w+(?:\.\w+)*)\}(?!\})",
+        )
+        for pattern in patterns:
+            placeholders.extend(re.findall(pattern, template))
+        return placeholders
 
     def find_matching_template(
         self,
-        templates: List[ResponseTemplate],
+        templates: List[ResponseTemplateConfig],
         trigger_type: str,
         tool_name: Optional[str] = None,
         state_name: Optional[str] = None,
         error_code: Optional[str] = None,
-    ) -> Optional[ResponseTemplate]:
+    ) -> Optional[ResponseTemplateConfig]:
         """
         Find a matching response template based on trigger conditions.
 
@@ -77,7 +132,7 @@ class TemplateRenderer:
 
     def apply_template(
         self,
-        template: ResponseTemplate,
+        template: ResponseTemplateConfig,
         data: dict,
     ) -> Optional[str]:
         """
