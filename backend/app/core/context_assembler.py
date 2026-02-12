@@ -212,7 +212,7 @@ class ContextAssembler:
         token_counts["messages"] = sum(count_tokens(m["content"]) for m in messages)
 
         # 3. Build tools array - always in English
-        tools = self._build_tools(agent, current_flow_state)
+        tools = self._build_tools(agent, current_flow_state, session)
         token_counts["tools"] = count_tokens(str(tools))
 
         # 4. Get model config
@@ -462,50 +462,61 @@ class ContextAssembler:
         return "\n".join(lines)
 
     def _build_tools(
-        self, agent: AgentConfig, current_flow_state: Optional[SubflowStateConfig] = None
+        self, agent: AgentConfig, current_flow_state: Optional[SubflowStateConfig] = None,
+        session: Optional["ConversationSession"] = None
     ) -> List[dict]:
         """
         Build the tools array for OpenAI.
 
         Tool selection priority:
-        1. If in flow with state_tools: ONLY those tools (plus navigation)
-        2. If in flow without state_tools: ONLY navigation tools
-        3. If not in flow AND agent has default_tools: use default_tools whitelist
-        4. If not in flow AND no default_tools: all agent tools (plus navigation)
+        1. If in flow: ALL tools from ALL states of the subflow (union)
+        2. If not in flow AND agent has default_tools: use default_tools whitelist
+        3. If not in flow AND no default_tools: all agent tools (plus navigation)
+
+        Note: We use all flow tools because state transitions may not advance
+        deterministically, and the LLM needs access to tools from later states
+        to self-guide through the flow based on conversation history.
         """
         tools = []
 
         if current_flow_state:
-            # IN A FLOW STATE - use whitelist-only mode
-            state_tools = current_flow_state.state_tools
+            # IN A FLOW - collect tools from ALL states of this subflow
+            all_flow_tools = set()
+            flow_id = session.current_flow.get("flowId") if session and session.current_flow else None
 
-            if state_tools:
-                # Whitelist mode: only tools explicitly listed in state_tools
-                allowed_names = set(state_tools)
+            if flow_id:
+                # Find the subflow and collect all state_tools
+                for subflow in agent.subflows:
+                    if subflow.config_id == flow_id:
+                        for state in subflow.states.values():
+                            if state.state_tools:
+                                all_flow_tools.update(state.state_tools)
+                        break
+
+            if not all_flow_tools:
+                # Fallback: use current state's tools
+                all_flow_tools = set(current_flow_state.state_tools or [])
+
+            if all_flow_tools:
                 agent_tool_names = [t.name for t in agent.tools]
                 logger.debug(
-                    f"Flow state {current_flow_state.state_id}: resolving state_tools {state_tools} "
-                    f"against agent tools {agent_tool_names}"
+                    f"Flow {flow_id}: using all flow tools {all_flow_tools} "
+                    f"(current state: {current_flow_state.state_id})"
                 )
 
                 for tool in agent.tools:
-                    if tool.name in allowed_names:
+                    if tool.name in all_flow_tools:
                         tools.append(tool.to_openai_tool())
 
-                logger.debug(f"Flow state {current_flow_state.state_id}: {len(tools)} whitelisted tools")
-
-                # FAIL-SAFE: If whitelist resolved to ZERO tools, something is wrong
-                # Fall back to all agent tools rather than leaving LLM with only navigation
                 if not tools and agent.tools:
                     logger.warning(
-                        f"TOOL RESOLUTION FAILED: state_tools {state_tools} resolved to 0 tools. "
+                        f"TOOL RESOLUTION FAILED: flow tools {all_flow_tools} resolved to 0 tools. "
                         f"Agent {agent.config_id} has tools: {agent_tool_names}. "
                         f"Falling back to all agent tools as safety net."
                     )
                     for tool in agent.tools:
                         tools.append(tool.to_openai_tool())
             else:
-                # Empty state_tools - only navigation will be available
                 logger.warning(
                     f"Flow state {current_flow_state.state_id} has no state_tools defined - "
                     "only navigation tools will be available"

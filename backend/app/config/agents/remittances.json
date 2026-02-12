@@ -221,7 +221,7 @@
         }
       ],
       "requires_confirmation": true,
-      "confirmation_template": "Confirm sending ${amount_usd} USD to {recipient_name}?\n\nThey will receive the equivalent in {currency}\nWill be charged to your default payment method\nEstimated arrival: {eta}",
+      "confirmation_template": "Confirm sending ${amount_usd} USD to recipient ${recipient_id}?",
       "side_effects": "financial",
       "flow_transition": {
         "onSuccess": "completed",
@@ -496,7 +496,7 @@
         {
           "id": "select_recipient",
           "name": "Select Recipient",
-          "agent_instructions": "STEP 1: Call list_recipients immediately to show the user their saved recipients.\nSTEP 2: Present the recipients as a numbered list (name, country, delivery method).\nSTEP 3: When the user selects a recipient (by name or number), call get_recipient with the recipient_id to confirm details.\nSTEP 4: After confirming, tell the user you have selected that recipient and ask how much they want to send.",
+          "agent_instructions": "You guide the user through a complete send-money flow. Follow these phases in order based on the conversation history.\n\nPHASE 1 — RECIPIENT SELECTION:\n- Call list_recipients to show saved recipients as a numbered list.\n- When user selects one, call list_recipients AGAIN to get the real recipient_id (e.g. 'rec_maria'), then call get_recipient with that exact ID.\n- CRITICAL: You do NOT remember tool result data between turns. Always re-call list_recipients and get_recipient to look up IDs before using them.\n\nPHASE 2 — AMOUNT & DELIVERY:\n- Once recipient is confirmed, ask how much to send (or confirm if user already said an amount).\n- Present the recipient's default delivery method and ask to confirm or choose another.\n\nPHASE 3 — REVIEW & CONFIRM:\n- Summarize: recipient name, amount USD, delivery method.\n- Ask for explicit confirmation before proceeding.\n\nPHASE 4 — EXECUTE TRANSFER:\n- BEFORE calling create_transfer, you MUST call list_recipients and get_recipient to obtain the real recipient_id. Never guess IDs.\n- Call create_transfer with the REAL recipient_id from get_recipient (e.g. 'rec_maria'), amount_usd, and delivery_method_id.\n- The tool has requires_confirmation=true so the system will handle final confirmation.\n\nIMPORTANT: Always use REAL IDs from tool results. Never fabricate or guess IDs like 'rec_maria_garcia_mx_bbva_4521'. The real IDs look like 'rec_maria', 'rec_jose', etc.",
           "state_tools": [
             "list_recipients",
             "get_recipient"

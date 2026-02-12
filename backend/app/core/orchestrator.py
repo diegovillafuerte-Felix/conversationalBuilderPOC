@@ -36,7 +36,7 @@ from app.core.event_trace import EventTracer, EventCategory, EventLevel
 from app.core.context_enrichment import evaluate_condition
 
 logger = logging.getLogger(__name__)
-MAX_CHAIN_STEPS = 3
+MAX_CHAIN_STEPS = 4
 
 
 @dataclass
@@ -220,15 +220,12 @@ class Orchestrator:
                 )
                 break
 
-            # Determine prompt mode: use ROUTING mode for subsequent iterations
-            # after routing has occurred (minimal context for routing decisions)
+            # Always use FULL mode. ROUTING mode (minimal context for routing
+            # decisions only) is disabled for now — it strips service tools which
+            # prevents agents from answering after multi-step routing chains.
+            # TODO: Re-enable ROUTING mode with better heuristics (only for
+            # intermediate routing iterations, not the final serving agent).
             prompt_mode = PromptMode.FULL
-            if (
-                chain_state.iteration > 1
-                and routing_occurred_previously
-                and not chain_state.pending_context_requirements
-            ):
-                prompt_mode = PromptMode.ROUTING
 
             chain_state.routing_occurred = False  # Reset for this iteration
 
@@ -1221,27 +1218,97 @@ class Orchestrator:
             )
 
             try:
-                feedback_start = time.time()
-                # Don't pass tools - force LLM to respond with text, not more tool calls
-                continuation_response = await self.llm_client.complete_with_tool_results(
-                    system_prompt=context.system_prompt,
-                    messages=messages_with_tool_calls,
-                    tools=[],  # Empty to force text response
-                    tool_results=service_tool_results,
-                )
-                feedback_duration = int((time.time() - feedback_start) * 1000)
-                tracer.trace(
-                    EventCategory.LLM, "tool_feedback_complete",
-                    f"Continuation response received",
-                    duration_ms=feedback_duration,
-                    data={
-                        "text": continuation_response.text,
-                        "output_tokens": continuation_response.output_tokens,
-                        "input_tokens": continuation_response.input_tokens
-                    }
-                )
-                chain_state.last_llm_response = continuation_response
-                return continuation_response.text
+                # Iterative tool feedback loop: execute tool calls, feed results back,
+                # repeat until the LLM returns text (up to MAX_FEEDBACK_ROUNDS).
+                MAX_FEEDBACK_ROUNDS = 3
+                current_messages = messages_with_tool_calls
+                current_tool_results = service_tool_results
+
+                # Filter out routing/navigation tools from the feedback loop.
+                # In the feedback loop, the LLM should only use service tools
+                # (for follow-up data fetching) or generate text. Routing tools
+                # like go_home cause empty responses when called here.
+                ROUTING_TOOL_NAMES = {"go_home", "up_one_level", "escalate_to_human"}
+                all_tools = context.tools if context.tools else []
+                current_tools = [
+                    t for t in all_tools
+                    if t.get("function", {}).get("name", "") not in ROUTING_TOOL_NAMES
+                    and not t.get("function", {}).get("name", "").startswith("enter_")
+                    and not t.get("function", {}).get("name", "").startswith("start_flow_")
+                ]
+
+                for feedback_round in range(MAX_FEEDBACK_ROUNDS):
+                    is_last_round = (feedback_round == MAX_FEEDBACK_ROUNDS - 1)
+                    feedback_start = time.time()
+
+                    round_response = await self.llm_client.complete_with_tool_results(
+                        system_prompt=context.system_prompt,
+                        messages=current_messages,
+                        tools=[] if is_last_round else current_tools,
+                        tool_results=current_tool_results,
+                    )
+                    feedback_duration = int((time.time() - feedback_start) * 1000)
+
+                    # If LLM returned text (no more tool calls), we're done
+                    if not round_response.tool_calls or is_last_round:
+                        tracer.trace(
+                            EventCategory.LLM, "tool_feedback_complete",
+                            f"Feedback round {feedback_round + 1}: text response",
+                            duration_ms=feedback_duration,
+                            data={
+                                "text": round_response.text,
+                                "round": feedback_round + 1,
+                                "output_tokens": round_response.output_tokens,
+                            }
+                        )
+                        chain_state.last_llm_response = round_response
+                        return round_response.text
+
+                    # LLM made more tool calls — execute them
+                    tracer.trace(
+                        EventCategory.LLM, "tool_feedback_followup",
+                        f"Feedback round {feedback_round + 1}: {len(round_response.tool_calls)} tool calls",
+                        duration_ms=feedback_duration,
+                        data={"tool_calls": [tc.name for tc in round_response.tool_calls]}
+                    )
+
+                    next_tool_calls = []
+                    next_tool_results = []
+                    for tc in round_response.tool_calls:
+                        result = await self._process_tool_call(session, agent, tc)
+                        chain_state.last_tool_calls.append({
+                            "name": tc.name,
+                            "params": tc.parameters,
+                            "result": result.data if result else None,
+                        })
+                        if result and result.data and isinstance(result.data, dict) and result.data.get("_routing_outcome"):
+                            continue
+                        next_tool_calls.append(tc)
+                        next_tool_results.append({
+                            "tool_call_id": tc.id,
+                            "content": result.data if result and result.success else {
+                                "error": result.error if result else "Unknown error"
+                            }
+                        })
+
+                    if not next_tool_calls:
+                        chain_state.last_llm_response = round_response
+                        return round_response.text or ""
+
+                    # Build messages for next round
+                    next_messages = current_messages.copy()
+                    for tr in current_tool_results:
+                        next_messages.append({"role": "tool", "tool_call_id": tr["tool_call_id"], "content": json.dumps(tr["content"], default=str)})
+                    next_messages.append({
+                        "role": "assistant",
+                        "content": round_response.text or "",
+                        "tool_calls": [
+                            {"id": tc.id, "type": "function", "function": {"name": tc.name, "arguments": json.dumps(tc.parameters)}}
+                            for tc in next_tool_calls
+                        ]
+                    })
+                    current_messages = next_messages
+                    current_tool_results = next_tool_results
             except Exception as e:
                 tracer.trace(
                     EventCategory.ERROR, "tool_feedback_failed",
