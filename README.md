@@ -15,7 +15,7 @@ A proof-of-concept multi-agent conversational AI system for handling financial p
 - **Database**: PostgreSQL
 - **Cache**: Redis
 - **LLM**: OpenAI GPT-4o
-- **Frontend**: Simple HTML/CSS/JS chat interface
+- **Frontend**: React (Vite)
 
 ## Quick Start
 
@@ -45,7 +45,7 @@ A proof-of-concept multi-agent conversational AI system for handling financial p
 
 4. Open the chat interface:
    ```
-   frontend/chat/index.html
+   http://localhost:5173
    ```
 
 ### Option 2: Local Development
@@ -73,7 +73,7 @@ A proof-of-concept multi-agent conversational AI system for handling financial p
 
 5. Open the chat interface in your browser:
    ```
-   frontend/chat/index.html
+   http://localhost:5173
    ```
 
 ## API Endpoints
@@ -121,20 +121,20 @@ curl -X POST http://localhost:8000/api/chat/message \
 conversationalBuilderPOC/
 ├── backend/
 │   ├── app/
-│   │   ├── core/           # Orchestration logic
-│   │   │   ├── orchestrator.py
-│   │   │   ├── context_assembler.py
-│   │   │   ├── state_manager.py
-│   │   │   ├── tool_executor.py
-│   │   │   └── llm_client.py
-│   │   ├── models/         # SQLAlchemy ORM models
+│   │   ├── core/           # Orchestration engine
+│   │   ├── clients/        # HTTP clients for services gateway
+│   │   ├── models/         # SQLAlchemy ORM models (sessions, users)
 │   │   ├── routes/         # FastAPI routes
 │   │   ├── schemas/        # Pydantic schemas
-│   │   ├── services/       # Mock backend services
+│   │   ├── config/         # JSON agent/tool/flow configurations
 │   │   └── seed/           # Seed data
 │   └── requirements.txt
+├── services/               # Independently deployable services gateway (port 8001)
+│   └── app/
+│       ├── routers/        # REST API endpoints
+│       └── services/       # Mock service implementations
 ├── frontend/
-│   └── chat/               # Simple chat UI
+│   └── react-app/          # React chat + admin UI (Vite)
 └── docker-compose.yml
 ```
 
@@ -161,10 +161,9 @@ The system comes pre-seeded with:
 6. **Bill Pay Agent**
    - Pay utility bills (CFE, Telmex, etc.)
 
-## Next Steps (Not Implemented in POC)
+## Next Steps
 
-- Admin UI for managing agents/tools
-- Visual flow editor for subflows
-- Conversation analytics
+- Conversation analytics dashboard
 - WhatsApp integration
 - Real backend service integration
+- Auth and rate limiting

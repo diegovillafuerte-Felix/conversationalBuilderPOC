@@ -63,7 +63,6 @@ class RoutingHandler:
             return RoutingOutcome(
                 handled=False,
                 state_changed=False,
-                context_requirements=[],
                 response_text=None
             )
 
@@ -72,7 +71,6 @@ class RoutingHandler:
             return RoutingOutcome(
                 handled=True,
                 state_changed=False,
-                context_requirements=[],
                 response_text=None,
                 error=result.error
             )
@@ -91,7 +89,6 @@ class RoutingHandler:
             return RoutingOutcome(
                 handled=True,
                 state_changed=False,
-                context_requirements=[],
                 response_text=None,
                 error=f"Unknown routing action: {result.action}"
             )
@@ -129,7 +126,6 @@ class RoutingHandler:
         return RoutingOutcome(
             handled=True,
             state_changed=True,  # Agent changed
-            context_requirements=agent.context_requirements or [],
             response_text=None
         )
 
@@ -177,7 +173,6 @@ class RoutingHandler:
             return RoutingOutcome(
                 handled=True,
                 state_changed=False,
-                context_requirements=[],
                 response_text=None,
                 error=f"Subflow {result.target_id} not found in agent {target_agent.config_id}"
             )
@@ -206,7 +201,6 @@ class RoutingHandler:
         return RoutingOutcome(
             handled=True,
             state_changed=True,  # Flow started
-            context_requirements=target_agent.context_requirements or [],
             response_text=None
         )
 
@@ -259,7 +253,6 @@ class RoutingHandler:
             return RoutingOutcome(
                 handled=True,
                 state_changed=True,  # Popped to parent agent
-                context_requirements=current_agent.context_requirements if current_agent else [],
                 response_text=None
             )
 
@@ -270,7 +263,6 @@ class RoutingHandler:
             return RoutingOutcome(
                 handled=True,
                 state_changed=True,  # Returned to root
-                context_requirements=current_agent.context_requirements if current_agent else [],
                 response_text=None
             )
 
@@ -281,7 +273,6 @@ class RoutingHandler:
             return RoutingOutcome(
                 handled=True,
                 state_changed=False,  # No state change, conversation ends
-                context_requirements=[],
                 response_text="Entiendo. Te voy a conectar con un agente humano que podrá ayudarte mejor. Un momento por favor..."
             )
 
@@ -290,7 +281,6 @@ class RoutingHandler:
             return RoutingOutcome(
                 handled=True,
                 state_changed=False,
-                context_requirements=[],
                 response_text=None,
                 error=f"Unknown navigation action: {action}"
             )

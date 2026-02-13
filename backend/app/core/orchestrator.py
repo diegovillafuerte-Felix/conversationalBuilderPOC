@@ -91,7 +91,6 @@ class ChainState:
     routing_path: List[dict] = field(default_factory=list)
     last_llm_response: Optional[LLMResponse] = None
     last_tool_calls: List[dict] = field(default_factory=list)
-    pending_context_requirements: List[dict] = field(default_factory=list)
 
 
 class Orchestrator:
@@ -267,11 +266,6 @@ class Orchestrator:
 
             # Refresh flow state in case transition evaluation updated flow data.
             flow_state = self.state_manager.get_current_flow_state(session)
-            effective_context_requirements = (
-                chain_state.pending_context_requirements or agent.context_requirements
-            )
-            chain_state.pending_context_requirements = []
-
             # Assemble context (ROUTING mode uses minimal context)
             context = self.context_assembler.assemble(
                 session=session,
@@ -281,7 +275,6 @@ class Orchestrator:
                 recent_messages=recent_messages,
                 compacted_history=compacted_history,
                 current_flow_state=flow_state,
-                context_requirements=effective_context_requirements,
                 mode=prompt_mode,
             )
 
@@ -1094,7 +1087,6 @@ class Orchestrator:
                             data={"state_changed": True}
                         )
                         chain_state.routing_occurred = True
-                        chain_state.pending_context_requirements = routing_outcome.context_requirements or []
                         await self.db.commit()
 
                         # Refresh session and get new agent

@@ -66,14 +66,6 @@ conversationalBuilderPOC/
 │   │   ├── clients/           # HTTP clients for external services
 │   │   │   ├── service_client.py    # Async HTTP client for services gateway
 │   │   │   └── service_mapping.py   # Tool name → endpoint mapping
-│   │   ├── services/          # Mock service implementations (same as services gateway)
-│   │   │   ├── remittances.py       # Remittances mock service
-│   │   │   ├── snpl.py              # SNPL/credit mock service
-│   │   │   ├── topups.py            # Top-ups mock service
-│   │   │   ├── billpay.py           # Bill pay mock service
-│   │   │   ├── wallet.py            # Wallet mock service
-│   │   │   ├── financial_data.py    # Financial data mock service
-│   │   │   └── campaigns.py         # Campaigns mock service
 │   │   ├── models/            # SQLAlchemy ORM models (session/user data only)
 │   │   │   ├── session.py     # ConversationSession
 │   │   │   ├── conversation.py # ConversationMessage, ConversationHistoryCompacted
@@ -85,7 +77,8 @@ conversationalBuilderPOC/
 │   │   ├── config/            # JSON configurations
 │   │   │   ├── agents/        # Agent definitions (owned by product teams)
 │   │   │   │   # felix.json (Platform), remittances.json (Chat team),
-│   │   │   │   # topups.json (New Products), snpl.json (Credit team), etc.
+│   │   │   │   # topups.json (New Products), snpl.json (Credit team),
+│   │   │   │   # billpay.json (New Products), wallet.json
 │   │   │   ├── prompts/       # System prompt templates (Platform team)
 │   │   │   ├── sample_data/   # Sample data for seeding
 │   │   │   └── confirmation_templates.json  # Financial transaction confirmations
@@ -128,8 +121,6 @@ conversationalBuilderPOC/
 │   ├── Dockerfile
 │   └── requirements.txt
 ├── frontend/
-│   ├── chat/                  # Simple vanilla JS chat UI
-│   ├── admin/                 # Simple vanilla JS admin UI
 │   └── react-app/             # React-based UI
 │       ├── src/components/
 │       │   ├── chat/          # Chat interface components
@@ -158,7 +149,7 @@ conversationalBuilderPOC/
 | Backend startup | `backend/app/main.py` | FastAPI lifespan, seeding |
 | Admin API | `backend/app/routes/admin.py` | Agent/Tool CRUD |
 | Services Gateway | `services/app/main.py` | FastAPI on port 8001 |
-| Frontend chat | `frontend/chat/index.html` or `frontend/react-app/` | User interfaces |
+| Frontend chat | `frontend/react-app/` | React chat + admin UI |
 
 ## Module Relationships
 
@@ -238,7 +229,7 @@ User Request
 
 ## Current State
 
-**Implemented:** Multi-agent orchestration, all product agents (remittances, credit, topups, billpay, wallet), tool execution with mock backends, stateful subflows, confirmation handling, history compaction, debug panel, i18n (es/en), vanilla JS + React UIs, admin CRUD API.
+**Implemented:** Multi-agent orchestration, all product agents (remittances, credit, topups, billpay, wallet), tool execution with mock backends, stateful subflows, confirmation handling, history compaction, debug panel, i18n (es/en), React UI, admin CRUD API.
 
 **Remittances Agent (Full Implementation):**
 - Supports 7 countries: MX, GT, HN, CO, DO, SV, NI
@@ -315,10 +306,8 @@ User Request
 - `visualizeStore.js` - Zustand store for visualization state
 
 **Simplification (Jan 2026):**
-- **Removed Shadow Service**: Deleted `shadow_service.py`, `shadow_subagent.py`, `shadow_service.json`, and related endpoints
-- **Simplified Context Enrichment**: Reduced from ~510 lines to ~75 lines. Now only provides `evaluate_condition()` for declarative transitions
+- **Simplified Context Enrichment**: Now only provides `evaluate_condition()` for declarative transitions
 - **Removed proactive data fetching**: LLM now explicitly calls tools when it needs data (via `agent_instructions`)
-- **Removed `context_requirements`**: Agents no longer have automatic data loading - tools are called explicitly
 - **Benefits**: ~50% reduction in core orchestration code, simpler mental model, predictable flow
 
 **Prompt Architecture Optimization (Jan 2026):**
@@ -408,7 +397,6 @@ cd backend && ./venv/bin/python -m pytest tests/ -v
 
 **Test Structure:**
 - `backend/tests/unit/core/` - State manager, tool executor tests
-- `backend/tests/unit/services/` - Mock service tests (topups, etc.)
 - `backend/tests/integration/` - API endpoint tests
 - `backend/tests/conversational/` - LLM-based scenario tests defined in agent JSON configs (`test_scenarios` field)
 - `backend/tests/e2e/` - E2E conversation tests against live servers (see Development Workflow section)

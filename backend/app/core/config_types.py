@@ -240,7 +240,6 @@ class AgentConfig:
         "canGoHome": False,
         "canEscalate": True
     })
-    context_requirements: List[dict] = field(default_factory=list)
     tools: List[ToolConfig] = field(default_factory=list)
     subflows: List[SubflowConfig] = field(default_factory=list)
     response_templates: List[ResponseTemplateConfig] = field(default_factory=list)
@@ -275,7 +274,6 @@ class AgentConfig:
                 "canGoHome": False,
                 "canEscalate": True
             }),
-            context_requirements=data.get("context_requirements", []),
             tools=tools,
             subflows=subflows,
             response_templates=response_templates,

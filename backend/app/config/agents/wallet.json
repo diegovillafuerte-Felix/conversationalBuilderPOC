@@ -13,12 +13,6 @@
     "canEscalate": true
   },
   "parent_agent": "felix",
-  "context_requirements": [
-    {
-      "type": "product_summary",
-      "productFilter": "wallet"
-    }
-  ],
   "tools": [
     {
       "name": "get_balance",

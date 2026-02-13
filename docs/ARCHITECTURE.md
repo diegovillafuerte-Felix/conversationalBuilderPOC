@@ -14,10 +14,9 @@
 6. [The Agent Hierarchy](#the-agent-hierarchy)
 7. [Tools: How Agents Take Action](#tools-how-agents-take-action)
 8. [Subflows: Multi-Step Conversations](#subflows-multi-step-conversations)
-9. [The Shadow Service: Contextual Intelligence](#the-shadow-service-contextual-intelligence)
-10. [State Management: Remembering Context](#state-management-remembering-context)
-11. [Why This Architecture?](#why-this-architecture)
-12. [Technical Reference](#technical-reference)
+9. [State Management: Remembering Context](#state-management-remembering-context)
+10. [Why This Architecture?](#why-this-architecture)
+11. [Technical Reference](#technical-reference)
 
 ---
 
@@ -43,7 +42,6 @@ Assistant: "I'd be happy to help you send money to Mexico!
 
 - **Natural conversation** - No rigid menus or forms
 - **Smart routing** - Automatically connects you to the right specialist
-- **Contextual help** - Proactively offers relevant tips and promotions
 - **Multi-step flows** - Guides you through complex processes step by step
 - **Safe confirmations** - Always confirms before executing financial transactions
 
@@ -59,24 +57,23 @@ At its core, COS is a **multi-agent system** where specialized AI agents collabo
                             │      "How can I help today?"        │
                             └─────────────┬───────────────────────┘
                                           │
-              ┌───────────────┬───────────┼───────────┬───────────────┐
-              │               │           │           │               │
-              ▼               ▼           ▼           ▼               ▼
-        ┌───────────┐  ┌───────────┐ ┌─────────┐ ┌─────────┐  ┌───────────┐
-        │Remittances│  │  Top-Ups  │ │Bill Pay │ │  SNPL   │  │ Financial │
-        │  Agent    │  │   Agent   │ │  Agent  │ │  Agent  │  │  Advisor  │
-        │           │  │           │ │         │ │         │  │  (Shadow) │
-        │ "Send $   │  │ "Recharge │ │ "Pay    │ │ "Apply  │  │           │
-        │  abroad"  │  │  phones"  │ │ bills"  │ │ for a   │  │ "Budget & │
-        └───────────┘  └───────────┘ └─────────┘ │  loan"  │  │  savings" │
-                                                 └─────────┘  └───────────┘
+              ┌───────────────┬───────────┼───────────┐
+              │               │           │           │
+              ▼               ▼           ▼           ▼
+        ┌───────────┐  ┌───────────┐ ┌─────────┐ ┌─────────┐
+        │Remittances│  │  Top-Ups  │ │Bill Pay │ │  SNPL   │
+        │  Agent    │  │   Agent   │ │  Agent  │ │  Agent  │
+        │           │  │           │ │         │ │         │
+        │ "Send $   │  │ "Recharge │ │ "Pay    │ │ "Apply  │
+        │  abroad"  │  │  phones"  │ │ bills"  │ │ for a   │
+        └───────────┘  └───────────┘ └─────────┘ │  loan"  │
+                                                 └─────────┘
 ```
 
 **Each agent is a specialist:**
 - The **Root Agent** is the "receptionist" who understands what you need and routes to specialists
 - Specialized agents handle specific domains with deep expertise
 - Agents can hand off to each other seamlessly
-- Financial Advisor is a **shadow agent** that activates when users need budgeting/savings help
 
 > **Note:** Wallet functionality exists as a **service** (for balance checks, history) but not as a dedicated conversational agent. Wallet data is accessed by other agents as needed.
 
@@ -109,9 +106,6 @@ A session tracks one conversation, including:
 - What step of a flow you're on
 - Data collected so far
 - Confirmation state
-
-### 5. **Shadow Service**
-A parallel system that watches the conversation and can inject helpful tips or promotions without interrupting the main flow.
 
 ---
 
@@ -236,16 +230,9 @@ When you send a message to COS, here's what happens behind the scenes. The syste
 ══════════════╪══════════════════════════════════════════════════════════════
               ▼
     ┌─────────────────────┐
-    │ 8. Shadow Service   │   Runs ONLY after chain completes
-    │    (Final State)    │   Evaluates final agent context
-    └─────────┬───────────┘   for tips/promotions
-              │
-              ▼
-    ┌─────────────────────┐
-    │ 9. Return Response  │   Send back to user:
+    │ 8. Return Response  │   Send back to user:
     │                     │   - Message from stable agent
     └─────────────────────┘   - Debug info (chain iterations, path)
-                              - Shadow tips (if any)
               │
               ▼
 
@@ -293,14 +280,7 @@ User: "Quiero recarga"               User: "Quiero recarga"
 → LLM: "Veo que tienes..."           → LLM: "Veo que tienes 1.Mamá 2.Hermano"
 ```
 
-**3. Shadow Service (Final State Only)**
-
-The Shadow Service runs **after** the routing chain completes:
-- Evaluates the final agent/flow context
-- No wasted evaluation on intermediate routing states
-- Tips are relevant to where the user actually landed
-
-**4. Services Gateway (HTTP)**
+**3. Services Gateway (HTTP)**
 
 Services are **independently deployed** and communicate via HTTP:
 - Backend (port 8000) ←→ Services Gateway (port 8001)
@@ -334,14 +314,6 @@ Agents are organized in a tree structure with strict isolation boundaries. This 
    ├── 3 subflows       ├── 1 subflow      ├── 1 subflow      ├── 1 subflow
    └── Can go back      └── Can go back    └── Can go back    └── Can go back
        to Root              to Root             to Root            to Root
-
-                            │
-                            │ (Shadow Service)
-                            ▼
-                    Financial Advisor
-                    ├── Activates on financial wellness topics
-                    ├── 90% relevance threshold
-                    └── Can be pushed onto agent stack
 ```
 
 ### Example: Agent Navigation
@@ -556,107 +528,6 @@ Each state tells the AI what to do:
 
 ---
 
-## The Shadow Service: Contextual Intelligence
-
-The Shadow Service runs **in parallel** with every conversation, looking for opportunities to help:
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         SHADOW SERVICE ARCHITECTURE                         │
-└─────────────────────────────────────────────────────────────────────────────┘
-
-                         Main Conversation
-                               │
-    User: "Send $200          │
-           to Mexico"          │
-                               │
-              ┌────────────────┴────────────────┐
-              │                                 │
-              ▼                                 ▼
-    ┌─────────────────┐              ┌─────────────────┐
-    │   Main LLM      │              │ Shadow Service  │
-    │                 │              │                 │
-    │ "Process the    │              │ Evaluates:      │
-    │  transfer       │              │ • Financial tips│
-    │  request"       │              │ • Promotions    │
-    │                 │              │ • Savings hints │
-    └────────┬────────┘              └────────┬────────┘
-             │                                │
-             │                                │
-             ▼                                ▼
-    ┌─────────────────────────────────────────────────┐
-    │              Combined Response                  │
-    │                                                 │
-    │ Agent: "I'll send $200 to Maria in Mexico.     │
-    │         She'll receive 3,490 MXN."             │
-    │                                                 │
-    │ 💡 Tip: "Did you know? Sending $50 more        │
-    │     would unlock our preferred rate!"          │
-    └─────────────────────────────────────────────────┘
-```
-
-### Shadow Subagents
-
-Different subagents watch for different opportunities:
-
-```
-┌─────────────────┐     ┌─────────────────┐
-│ Financial       │     │ Campaigns       │
-│ Advisor         │     │ (DISABLED)      │
-│                 │     │                 │
-│ Watches for:    │     │ Would watch for:│
-│ • Budgeting     │     │ • Promotions    │
-│   questions     │     │ • Seasonal      │
-│ • Savings       │     │   offers        │
-│   opportunities │     │ • Loyalty       │
-│ • Financial     │     │   rewards       │
-│   planning      │     │                 │
-│                 │     │                 │
-│ Threshold: 90%  │     │ Threshold: 70%  │
-│ relevance       │     │ relevance       │
-│                 │     │                 │
-│ ✅ ENABLED      │     │ ❌ DISABLED     │
-│ Has full agent  │     │ Config only     │
-│ (financial_     │     │ (no agent file) │
-│  advisor.json)  │     │                 │
-└─────────────────┘     └─────────────────┘
-```
-
-> **Current Status:** Only the Financial Advisor subagent is enabled. The Campaigns subagent is configured but disabled (`enabled: false` in shadow_service.json).
-
-### Activation vs. Tips
-
-The Shadow Service operates in two modes:
-
-**1. Tip Mode** - Adds a helpful message without changing the flow:
-```
-User: "How much did I send last month?"
-Agent: "Last month you sent a total of $450 across 3 transfers."
-💡 Tip: "You're close to our Gold tier! Two more transfers
-        this month unlocks 0.5% better rates."
-```
-
-**2. Activation Mode** - Takes over the conversation when relevant:
-```
-User: "I'm worried about my spending habits"
-Agent: "I understand financial wellness is important to you.
-        Let me connect you with our Financial Advisor who
-        specializes in budgeting and savings strategies."
-        [Switches to Financial Advisor agent]
-```
-
-### Cooldown System
-
-To avoid overwhelming users, the shadow service has cooldowns:
-
-```
-Global cooldown: 3 messages between any shadow tips
-Per-subagent cooldown: 5 messages for Financial Advisor
-                       3 messages for Campaigns
-```
-
----
-
 ## State Management: Remembering Context
 
 Every conversation maintains state across multiple dimensions:
@@ -726,21 +597,6 @@ Start: [Root]
 "Actually, I need credit" → [Root, Remittances, SNPL]
 "Go back" → [Root, Remittances]
 "Go home" → [Root]
-```
-
-### Preserving Flow State
-
-When the Shadow Service activates, your flow state is preserved:
-
-```
-1. User is in: Remittances → Send Money Flow → Step 3 of 5
-2. Shadow detects user needs financial advice
-3. Financial Advisor agent is pushed onto stack
-4. Original flow state saved in stack frame
-5. User chats with Financial Advisor
-6. User says "go back" or advisor completes
-7. Financial Advisor popped from stack
-8. User returns to: Send Money Flow → Step 3 of 5 (exactly where they left off!)
 ```
 
 ---
@@ -818,23 +674,7 @@ TopUps: "Veo tus números..."        │  Root → enter_topups      │
                                     (Single response!)
 ```
 
-### Problem 4: Slow Contextual Help
-
-**Challenge:** Running extra AI calls for tips adds latency.
-
-**Solution:** Parallel Shadow Service
-- Shadow service runs simultaneously with main LLM
-- No added wait time for the user
-- Errors in shadow don't break the main conversation
-
-```
-Time:    0ms ─────────────────────────────────────────▶ 800ms
-Main:    [======================LLM Call==============]
-Shadow:  [=======Shadow Eval=======]
-Result:  ────────────────────────────────────────────▶ Combined at 800ms
-```
-
-### Problem 5: Services and UI Are Coupled
+### Problem 4: Services and UI Are Coupled
 
 **Challenge:** Services that return formatted messages can't be reused.
 
@@ -859,7 +699,7 @@ def get_exchange_rate(from_currency, to_currency):
 # API:  { "rate": 17.45, "from": "USD", "to": "MXN" }
 ```
 
-### Problem 6: Configuration Scattered Everywhere
+### Problem 5: Configuration Scattered Everywhere
 
 **Challenge:** Agent behaviors defined in code are hard to modify.
 
@@ -886,7 +726,7 @@ def get_exchange_rate(from_currency, to_currency):
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### Problem 7: Teams Cannot Work Independently
+### Problem 6: Teams Cannot Work Independently
 
 **Challenge:** In a monolithic system, changes to one product affect others. Teams must coordinate constantly, slowing everyone down.
 
@@ -907,7 +747,7 @@ def get_exchange_rate(from_currency, to_currency):
 │   • Routing logic                    • Service implementations              │
 │   • LLM integration                  • Tool definitions                     │
 │   • Root agent config                • Flow states & transitions            │
-│   • Shadow service infra             • Response templates                   │
+│                                      • Response templates                   │
 │                                                                              │
 │   Ships: Platform releases           Ships: Independently per product       │
 │   Coordinates: API contracts only    Coordinates: API contracts only        │
@@ -969,14 +809,14 @@ Adding a new product requires:
 │  └──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘     │
 │           │                                                │               │
 │           ▼                                                ▼               │
-│  ┌──────────────┐    ┌──────────────┐             ┌──────────────┐        │
-│  │   Context    │    │  LLM Client  │             │   Shadow     │        │
-│  │  Assembler   │    │              │             │   Service    │        │
-│  │              │    │ OpenAI API   │             │              │        │
-│  │ Builds prompt│    │ parallel w/  │◄───────────►│ Parallel     │        │
-│  │ with enriched│    │ shadow       │             │ contextual   │        │
-│  │ data         │    │              │             │ messaging    │        │
-│  └──────────────┘    └──────────────┘             └──────────────┘        │
+│  ┌──────────────┐    ┌──────────────┐                                     │
+│  │   Context    │    │  LLM Client  │                                     │
+│  │  Assembler   │    │              │                                     │
+│  │              │    │ OpenAI API   │                                     │
+│  │ Builds prompt│    │              │                                     │
+│  │ with enriched│    │              │                                     │
+│  │ data         │    │              │                                     │
+│  └──────────────┘    └──────────────┘                                     │
 ├────────────────────────────────────────────────────────────────────────────┤
 │  ┌─────────────────────────────────────────────────────────────────────┐  │
 │  │                        Service Client (HTTP)                         │  │
@@ -1059,7 +899,6 @@ conversationalBuilderPOC/
 │   │   │   ├── agent_registry.py    # In-memory config registry with startup validation
 │   │   │   ├── config_types.py      # Dataclasses for agent/tool/subflow configs
 │   │   │   ├── event_trace.py       # Event tracing for debugging
-│   │   │   ├── shadow_service.py    # Parallel contextual tips
 │   │   │   ├── llm_client.py        # OpenAI API wrapper
 │   │   │   └── i18n.py              # Language directive injection
 │   │   │
@@ -1083,10 +922,8 @@ conversationalBuilderPOC/
 │   │   │   │   ├── remittances.json # Chat/Remittances team
 │   │   │   │   ├── topups.json      # New Products team
 │   │   │   │   ├── snpl.json        # Credit team
-│   │   │   │   ├── billpay.json     # New Products team
-│   │   │   │   └── financial_advisor.json  # Platform team (shadow)
+│   │   │   │   └── billpay.json     # New Products team
 │   │   │   ├── prompts/             # System prompts (Platform team)
-│   │   │   ├── shadow_service.json  # Shadow service config (Platform team)
 │   │   │   └── confirmation_templates.json  # Financial transaction confirmations
 │   │   │
 │   │   └── main.py                  # FastAPI entry point
@@ -1118,8 +955,6 @@ conversationalBuilderPOC/
 │   └── tests/                       # Services Gateway tests
 │
 ├── frontend/
-│   ├── chat/                        # Simple vanilla JS chat UI
-│   ├── admin/                       # Simple vanilla JS admin UI
 │   └── react-app/                   # React application
 │       ├── src/components/
 │       │   ├── chat/                # Chat UI (ChatContainer, DebugPanel, EventTracePanel, etc.)
@@ -1146,12 +981,10 @@ conversationalBuilderPOC/
 | In-memory config registry | `backend/app/core/agent_registry.py` |
 | Config dataclasses | `backend/app/core/config_types.py` |
 | Event tracing for debugging | `backend/app/core/event_trace.py` |
-| Shadow contextual tips | `backend/app/core/shadow_service.py` |
 | HTTP client for services | `backend/app/clients/service_client.py` |
 | Tool → endpoint mapping | `backend/app/clients/service_mapping.py` |
 | Agent configurations | `backend/app/config/agents/*.json` |
 | Confirmation templates | `backend/app/config/confirmation_templates.json` |
-| Shadow service config | `backend/app/config/shadow_service.json` |
 | Services Gateway entry | `services/app/main.py` |
 
 ### Current Agent Configurations
@@ -1163,7 +996,6 @@ conversationalBuilderPOC/
 | Top-Ups | `topups.json` | New Products | Mobile phone recharges (8 tools, 1 subflow) |
 | Bill Pay | `billpay.json` | New Products | Bill payments (6 tools, 1 subflow) |
 | SNPL | `snpl.json` | Credit Team | Send Now Pay Later credit (12 tools, 1 subflow) |
-| Financial Advisor | `financial_advisor.json` | Platform | Shadow agent for budgeting/savings |
 
 ---
 
@@ -1229,21 +1061,7 @@ ContextAssembler builds system prompt:
 └── Language directive: "Respond in Spanish"
 ```
 
-**Step 4: Parallel Execution**
-```
-┌─────────────────────────────┐    ┌─────────────────────────────┐
-│        Main LLM             │    │      Shadow Service         │
-│                             │    │                             │
-│  Input: "Hola"              │    │  Evaluates context...       │
-│  Context: Root agent        │    │  Financial Advisor: 5%      │
-│                             │    │  Campaigns: 10%             │
-│  Decision: Simple greeting  │    │  → Below thresholds         │
-│  → No tool calls needed     │    │  → No messages to inject    │
-│                             │    │                             │
-└─────────────────────────────┘    └─────────────────────────────┘
-```
-
-**Step 5: Response Generated**
+**Step 4: Response Generated**
 ```
 LLM Response:
   message: "¡Hola! Soy tu asistente financiero. ¿En qué puedo ayudarte hoy?
@@ -2237,11 +2055,6 @@ Turn  │ User Said             │ Agent Stack          │ Flow State        �
    - User response classified (Yes/No/Unclear)
    - Tool re-executed with skip_confirmation
 
-6. **Shadow Service (Final State Only)** (Every turn)
-   - Runs AFTER chain completes (evaluates final state)
-   - Evaluated but didn't inject (below thresholds)
-   - No wasted evaluation on intermediate routing states
-
 This walkthrough shows how COS maintains coherent conversations across agent switches, flow abandonment, and multi-step transactions - using a routing chain that delivers immediate responses without extra turns.
 
 ---
@@ -2261,7 +2074,6 @@ This repository now implements the following POC-focused functional updates:
 
 ### Deferred Scope (Explicitly Out-of-Scope in this POC cycle)
 
-- Full shadow-service runtime parity and shadow-specific orchestration modules described in earlier architecture drafts remain deferred.
 - Legacy admin CRUD parity for all historical endpoint shapes remains deferred in favor of the current JSON-config admin API and visualization tooling.
 
 ---

@@ -20,7 +20,6 @@ class AgentCreate(BaseModel):
     system_prompt_addition: Optional[str] = Field(None, description="Additional system prompt text")
     model_config_json: dict = Field(default_factory=dict, description="Model configuration")
     navigation_tools: dict = Field(default_factory=dict, description="Navigation tool settings")
-    context_requirements: Optional[List[dict]] = Field(None, description="Context requirements")
 
 
 class AgentUpdate(BaseModel):
@@ -32,7 +31,6 @@ class AgentUpdate(BaseModel):
     system_prompt_addition: Optional[str] = None
     model_config_json: Optional[dict] = None
     navigation_tools: Optional[dict] = None
-    context_requirements: Optional[List[dict]] = None
     is_active: Optional[bool] = None
 
 
@@ -113,7 +111,6 @@ class AgentResponse(BaseModel):
     system_prompt_addition: Optional[str]
     model_config_json: dict
     navigation_tools: dict
-    context_requirements: Optional[List[dict]]
     is_active: bool
     created_at: datetime
     updated_at: datetime

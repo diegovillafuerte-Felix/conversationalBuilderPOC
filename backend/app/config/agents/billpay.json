@@ -13,9 +13,6 @@
     "canEscalate": true
   },
   "parent_agent": "felix",
-  "context_requirements": [
-    {"type": "product_summary", "productFilter": "billPay"}
-  ],
   "tools": [
     {
       "name": "get_billers",

@@ -1,8 +1,8 @@
 """Routing types and data classes for the orchestrator."""
 
 from enum import Enum
-from dataclasses import dataclass, field
-from typing import Optional, Any, List
+from dataclasses import dataclass
+from typing import Optional, Any
 
 
 class RoutingType(Enum):
@@ -83,13 +83,11 @@ class RoutingOutcome:
     Attributes:
         handled: Whether this was a routing action (vs regular tool)
         state_changed: Whether session state changed (agent/flow transition)
-        context_requirements: Config-driven enrichment requirements for next prompt assembly
         response_text: Direct response text to return (only for errors/escalation)
         error: Error message if execution failed
     """
     handled: bool
     state_changed: bool
-    context_requirements: List[dict] = field(default_factory=list)
     response_text: Optional[str] = None
     error: Optional[str] = None
 
@@ -98,7 +96,6 @@ class RoutingOutcome:
         return {
             "handled": self.handled,
             "state_changed": self.state_changed,
-            "context_requirements": self.context_requirements,
             "response_text": self.response_text,
             "error": self.error,
         }
@@ -109,7 +106,6 @@ class RoutingOutcome:
         return cls(
             handled=data.get("handled", False),
             state_changed=data.get("state_changed", False),
-            context_requirements=data.get("context_requirements", []),
             response_text=data.get("response_text"),
             error=data.get("error"),
         )

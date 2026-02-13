@@ -76,7 +76,6 @@ class ContextAssembler:
         recent_messages: Optional[List[ConversationMessage]] = None,
         compacted_history: Optional[str] = None,
         current_flow_state: Optional[SubflowStateConfig] = None,
-        context_requirements: Optional[List[dict]] = None,
         mode: PromptMode = PromptMode.FULL,
     ) -> AssembledContext:
         """
@@ -90,7 +89,6 @@ class ContextAssembler:
             recent_messages: Recent messages for context
             compacted_history: Summarized older history
             current_flow_state: Current state if in a subflow
-            mode: Context assembly mode (FULL or ROUTING)
 
         Returns:
             AssembledContext with system prompt, messages, tools, and config
@@ -139,20 +137,6 @@ class ContextAssembler:
                 )
                 sections.append(product_section)
                 token_counts["product_context"] = count_tokens(product_section)
-
-        # Explicit context requirements (config-driven deterministic enrichment)
-        effective_requirements = context_requirements if context_requirements is not None else agent.context_requirements
-        if user_context and effective_requirements:
-            requirements_section = self._build_context_requirements_section(
-                user_context=user_context,
-                requirements=effective_requirements,
-            )
-            if requirements_section:
-                requirements_section = truncate_to_tokens(
-                    requirements_section, self.budgets["product_context"]
-                )
-                sections.append(requirements_section)
-                token_counts["context_requirements"] = count_tokens(requirements_section)
 
         # Compacted history - always in English
         if compacted_history:
@@ -301,46 +285,6 @@ class ContextAssembler:
                     )
 
         return None
-
-    def _build_context_requirements_section(
-        self,
-        user_context: UserContext,
-        requirements: List[dict],
-    ) -> Optional[str]:
-        """Build deterministic context blocks requested by agent config."""
-        if not requirements:
-            return None
-
-        lines: List[str] = ["\n## Required Context"]
-
-        for requirement in requirements:
-            req_type = requirement.get("type")
-            if req_type == "product_summary":
-                product_key = requirement.get("productFilter")
-                summary = (user_context.product_summaries or {}).get(product_key)
-                if summary:
-                    lines.append(f"- Product summary ({product_key}): {summary}")
-                continue
-
-            if req_type == "behavioral_summary":
-                if user_context.behavioral_summary:
-                    lines.append(f"- Behavioral summary: {user_context.behavioral_summary}")
-                continue
-
-            if req_type == "profile_fields":
-                fields = requirement.get("fields", [])
-                if not isinstance(fields, list):
-                    continue
-                profile = user_context.profile or {}
-                extracted = {field: profile.get(field) for field in fields if field in profile}
-                if extracted:
-                    lines.append(f"- Profile fields: {extracted}")
-                continue
-
-        if len(lines) == 1:
-            return None
-
-        return "\n".join(lines)
 
     def _format_product_summary(self, product: str, summary: dict) -> str:
         """Format a product summary for the prompt."""

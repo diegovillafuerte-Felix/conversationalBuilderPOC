@@ -10,7 +10,6 @@ const CATEGORY_COLORS = {
   llm: '#00cec9',
   tool: '#74b9ff',
   service: '#a29bfe',
-  shadow: '#fd79a8',
   error: '#d63031',
 };
 
@@ -23,7 +22,6 @@ const CATEGORY_ICONS = {
   llm: '🧠',
   tool: '🔧',
   service: '🌐',
-  shadow: '👻',
   error: '❌',
 };
 
