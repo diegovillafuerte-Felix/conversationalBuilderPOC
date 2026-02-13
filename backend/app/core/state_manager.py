@@ -8,6 +8,7 @@ from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.models.session import ConversationSession
 from app.core.agent_registry import get_agent_registry
@@ -233,6 +234,7 @@ class StateManager:
 
         old_state = locked_session.current_flow.get("currentState")
         locked_session.current_flow["currentState"] = new_state_id
+        flag_modified(locked_session, "current_flow")
 
         logger.info(
             f"Session {locked_session.session_id}: state transition {old_state} -> {new_state_id}"
@@ -262,6 +264,7 @@ class StateManager:
             current_data = locked_session.current_flow.get("stateData", {})
             current_data.update(data)
             locked_session.current_flow["stateData"] = current_data
+            flag_modified(locked_session, "current_flow")
 
         await self.db.flush()  # Persist and release lock
         return locked_session
