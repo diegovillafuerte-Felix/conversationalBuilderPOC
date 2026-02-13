@@ -91,6 +91,16 @@ conversationalBuilderPOC/
 │   │   │   └── confirmation_templates.json  # Financial transaction confirmations
 │   │   ├── seed/              # Database seeders (users only - agents loaded from JSON)
 │   │   └── main.py            # FastAPI app entry point
+│   ├── tests/
+│   │   ├── e2e/               # E2E conversation tests (live servers)
+│   │   │   ├── server_manager.py    # Server lifecycle management
+│   │   │   ├── scenarios.py         # Scenario definitions with structural gates
+│   │   │   ├── run_conversations.py # Main runner script (Claude Code's tool)
+│   │   │   ├── test_e2e.py          # Pytest wrapper for CI regression
+│   │   │   └── results/             # Output directory (gitignored)
+│   │   ├── unit/              # Unit tests
+│   │   ├── integration/       # API endpoint tests
+│   │   └── conversational/    # LLM-based scenario tests
 │   └── requirements.txt
 ├── services/                  # Independently deployable services gateway
 │   ├── app/
@@ -328,7 +338,43 @@ User Request
 - **Token savings**: ~70% tool token reduction for agents with many tools (19 → 6 + navigation)
 - **Backward compatible**: Agents without `default_tools` continue to expose all tools
 
+**E2E Conversation Testing:**
+- **Framework**: `backend/tests/e2e/` — runs multi-turn conversations against live servers (backend + services gateway + real LLM)
+- **Design philosophy**: Framework produces rich readable output; quality judgment comes from Claude Code reading the output, not from assertions
+- **Runner script**: `backend/tests/e2e/run_conversations.py` — primary tool for testing, outputs to `tests/e2e/results/`
+- **Scenarios**: `backend/tests/e2e/scenarios.py` — 5 scenarios (3 smoke + 2 multi-turn)
+- **Structural gates**: Minimal hard-fail checks (non-empty response, HTTP 200, escalation flag) — catches "system is broken" not "wrong answer"
+- **Pytest wrapper**: `backend/tests/e2e/test_e2e.py` — same scenarios via pytest for CI-style regression (`-m e2e`)
+- **Server manager**: `backend/tests/e2e/server_manager.py` — health checks and optional auto-start for backend/services gateway
+
 **Planned:** Analytics dashboard, WhatsApp integration, real backend services, auth, rate limiting.
+
+## Development Workflow (Autonomous)
+
+Claude Code operates as the engineering team. The human PM provides requirements and answers product questions.
+
+### After every code change:
+1. `./venv/bin/python -m pytest tests/unit -v` — must pass
+2. `./venv/bin/python -m tests.e2e.run_conversations` — run live conversations
+3. Read `tests/e2e/results/*.txt` — assess quality of responses
+4. Fix issues, repeat
+
+### Consult the PM for:
+- New feature requirements / scope changes
+- Product direction and prioritization
+- UX decisions (how should X behave?)
+- Architecture tradeoffs that affect product
+
+### Do NOT consult the PM for:
+- Test results, logs, debugging
+- Implementation details
+- "Does the system still work?" — run the E2E tests
+- Mechanical tasks (server management, DB issues, config loading)
+
+### E2E Test Cost
+- Smoke (~$0.03): 3 scenarios, 1 turn each
+- Full (~$0.13): 5 scenarios, 10 turns total
+- Run full suite after significant orchestration/routing/agent changes
 
 ## Running Tests
 
@@ -352,6 +398,12 @@ cd backend && ./venv/bin/python -m pytest tests/ -v
 
 # Skip slow/conversational tests
 ./venv/bin/python -m pytest tests/ -v -m "not slow and not conversational"
+
+# E2E conversation tests (requires live servers on ports 8000/8001)
+./venv/bin/python -m tests.e2e.run_conversations              # All scenarios, readable output
+./venv/bin/python -m tests.e2e.run_conversations --smoke       # Smoke tests only
+./venv/bin/python -m tests.e2e.run_conversations --scenario remittance_flow  # Single scenario
+./venv/bin/python -m pytest tests/e2e/ -v -m e2e               # Pytest mode for CI
 ```
 
 **Test Structure:**
@@ -359,6 +411,7 @@ cd backend && ./venv/bin/python -m pytest tests/ -v
 - `backend/tests/unit/services/` - Mock service tests (topups, etc.)
 - `backend/tests/integration/` - API endpoint tests
 - `backend/tests/conversational/` - LLM-based scenario tests defined in agent JSON configs (`test_scenarios` field)
+- `backend/tests/e2e/` - E2E conversation tests against live servers (see Development Workflow section)
 - `services/tests/` - Services gateway endpoint tests
 
 **Running Services Gateway Tests:**

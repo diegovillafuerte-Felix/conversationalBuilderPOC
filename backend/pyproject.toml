@@ -13,6 +13,7 @@ markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",
     "conversational: marks tests as LLM-based conversational tests",
+    "e2e: end-to-end conversation tests against live servers",
 ]
 addopts = "-v --tb=short"
 
