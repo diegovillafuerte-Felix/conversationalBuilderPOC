@@ -1,8 +1,9 @@
 """Unit tests for the StateManager."""
 
-import pytest
 from datetime import datetime, timedelta
 from uuid import uuid4
+
+import pytest
 
 from app.core.state_manager import StateManager
 from app.models.session import ConversationSession
@@ -29,9 +30,7 @@ class TestStateManager:
         assert session.status == "active"
 
     @pytest.mark.asyncio
-    async def test_get_or_create_session_returns_existing(
-        self, db_session, sample_session, sample_agent
-    ):
+    async def test_get_or_create_session_returns_existing(self, db_session, sample_session, sample_agent):
         """Test returning an existing session."""
         manager = StateManager(db_session)
 
@@ -80,9 +79,7 @@ class TestStateManager:
         manager = StateManager(db_session)
         original_stack_len = len(sample_session.agent_stack)
 
-        await manager.push_agent(
-            sample_session, sample_child_agent.config_id, "User requested topups"
-        )
+        await manager.push_agent(sample_session, sample_child_agent.config_id, "User requested topups")
 
         assert len(sample_session.agent_stack) == original_stack_len + 1
         assert sample_session.agent_stack[-1]["agentId"] == sample_child_agent.config_id
@@ -174,9 +171,7 @@ class TestStateManager:
         """Test confirmation expiration check with future expiry."""
         manager = StateManager(db_session)
         session = ConversationSession(user_id="test")
-        session.pending_confirmation = {
-            "expiresAt": (datetime.utcnow() + timedelta(hours=1)).isoformat()
-        }
+        session.pending_confirmation = {"expiresAt": (datetime.utcnow() + timedelta(hours=1)).isoformat()}
 
         assert manager.is_confirmation_expired(session) is False
 
@@ -184,9 +179,7 @@ class TestStateManager:
         """Test confirmation expiration check with past expiry."""
         manager = StateManager(db_session)
         session = ConversationSession(user_id="test")
-        session.pending_confirmation = {
-            "expiresAt": (datetime.utcnow() - timedelta(hours=1)).isoformat()
-        }
+        session.pending_confirmation = {"expiresAt": (datetime.utcnow() - timedelta(hours=1)).isoformat()}
 
         assert manager.is_confirmation_expired(session) is True
 

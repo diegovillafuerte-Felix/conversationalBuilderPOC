@@ -31,3 +31,7 @@ pytest-cov>=4.0.0
 
 # Utilities
 python-dateutil>=2.8.0
+
+# Dev tools
+ruff>=0.8.0
+mypy>=1.13.0

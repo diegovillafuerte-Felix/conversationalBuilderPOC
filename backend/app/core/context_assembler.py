@@ -2,21 +2,21 @@
 
 import json
 import logging
-from typing import Optional, List
 from dataclasses import dataclass
+from typing import Optional
 
 import tiktoken
 
 from app.config import get_settings
+from app.core.config_loader import load_prompts
+from app.core.config_types import AgentConfig, PromptMode, SubflowStateConfig, ToolConfig
+from app.core.i18n import (
+    DEFAULT_LANGUAGE,
+    get_language_directive,
+)
+from app.models.conversation import ConversationMessage
 from app.models.session import ConversationSession
 from app.models.user import UserContext
-from app.models.conversation import ConversationMessage
-from app.core.config_loader import load_prompts
-from app.core.config_types import AgentConfig, ToolConfig, SubflowStateConfig, PromptMode
-from app.core.i18n import (
-    get_language_directive,
-    DEFAULT_LANGUAGE,
-)
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -44,8 +44,8 @@ class AssembledContext:
     """Result of context assembly."""
 
     system_prompt: str
-    messages: List[dict]  # OpenAI message format
-    tools: List[dict]  # OpenAI tool format
+    messages: list[dict]  # OpenAI message format
+    tools: list[dict]  # OpenAI tool format
     model: str
     temperature: float
     max_tokens: int
@@ -72,10 +72,10 @@ class ContextAssembler:
         session: ConversationSession,
         user_message: str,
         agent: AgentConfig,
-        user_context: Optional[UserContext] = None,
-        recent_messages: Optional[List[ConversationMessage]] = None,
-        compacted_history: Optional[str] = None,
-        current_flow_state: Optional[SubflowStateConfig] = None,
+        user_context: UserContext | None = None,
+        recent_messages: list[ConversationMessage] | None = None,
+        compacted_history: str | None = None,
+        current_flow_state: SubflowStateConfig | None = None,
         mode: PromptMode = PromptMode.FULL,
     ) -> AssembledContext:
         """
@@ -115,9 +115,7 @@ class ContextAssembler:
 
         # Agent description - always in English
         agent_section = self._build_agent_section(agent)
-        agent_section = truncate_to_tokens(
-            agent_section, self.budgets["system_prompt"] - token_counts["base_prompt"]
-        )
+        agent_section = truncate_to_tokens(agent_section, self.budgets["system_prompt"] - token_counts["base_prompt"])
         sections.append(agent_section)
         token_counts["agent_description"] = count_tokens(agent_section)
 
@@ -132,9 +130,7 @@ class ContextAssembler:
         if user_context and agent.parent_agent_id:
             product_section = self._build_product_context(user_context, agent)
             if product_section:
-                product_section = truncate_to_tokens(
-                    product_section, self.budgets["product_context"]
-                )
+                product_section = truncate_to_tokens(product_section, self.budgets["product_context"])
                 sections.append(product_section)
                 token_counts["product_context"] = count_tokens(product_section)
 
@@ -144,9 +140,7 @@ class ContextAssembler:
                 "previous_history", "\n## Previous Conversation History\n{history}"
             )
             history_section = history_template.format(history=compacted_history)
-            history_section = truncate_to_tokens(
-                history_section, self.budgets["conversation_compacted"]
-            )
+            history_section = truncate_to_tokens(history_section, self.budgets["conversation_compacted"])
             sections.append(history_section)
             token_counts["compacted_history"] = count_tokens(history_section)
 
@@ -183,16 +177,20 @@ class ContextAssembler:
         # Add recent conversation messages
         if recent_messages:
             for msg in recent_messages:
-                messages.append({
-                    "role": msg.role if msg.role != "system" else "user",
-                    "content": msg.content,
-                })
+                messages.append(
+                    {
+                        "role": msg.role if msg.role != "system" else "user",
+                        "content": msg.content,
+                    }
+                )
 
         # Add current user message
-        messages.append({
-            "role": "user",
-            "content": user_message,
-        })
+        messages.append(
+            {
+                "role": "user",
+                "content": user_message,
+            }
+        )
         token_counts["messages"] = sum(count_tokens(m["content"]) for m in messages)
 
         # 3. Build tools array - always in English
@@ -218,9 +216,7 @@ class ContextAssembler:
     def _build_agent_section(self, agent: AgentConfig) -> str:
         """Build the agent role section."""
         prompts = load_prompts()
-        role_template = prompts.get("sections", {}).get(
-            "your_current_role", "\n## Your Current Role\n{description}"
-        )
+        role_template = prompts.get("sections", {}).get("your_current_role", "\n## Your Current Role\n{description}")
 
         # Get agent description from config
         description = agent.description
@@ -239,22 +235,16 @@ class ContextAssembler:
 
         name = user_context.get_preferred_name()
 
-        user_template = sections_config.get(
-            "user_section", "\n## User\nName: {name}"
-        )
+        user_template = sections_config.get("user_section", "\n## User\nName: {name}")
         sections = [user_template.format(name=name)]
 
         if user_context.behavioral_summary:
-            context_template = sections_config.get(
-                "user_context", "\n## User Context\n{behavioral_summary}"
-            )
+            context_template = sections_config.get("user_context", "\n## User Context\n{behavioral_summary}")
             sections.append(context_template.format(behavioral_summary=user_context.behavioral_summary))
 
         return "\n".join(sections)
 
-    def _build_product_context(
-        self, user_context: UserContext, agent: AgentConfig
-    ) -> Optional[str]:
+    def _build_product_context(self, user_context: UserContext, agent: AgentConfig) -> str | None:
         """Build product-specific context based on the agent."""
         if not user_context.product_summaries:
             return None
@@ -269,9 +259,7 @@ class ContextAssembler:
         }
 
         prompts = load_prompts()
-        product_template = prompts.get("sections", {}).get(
-            "product_context", "\n## {agent_name} Context\n{summary}"
-        )
+        product_template = prompts.get("sections", {}).get("product_context", "\n## {agent_name} Context\n{summary}")
 
         agent_name_lower = agent.name.lower()
         for key, product_key in agent_to_product.items():
@@ -279,10 +267,7 @@ class ContextAssembler:
                 summary = user_context.product_summaries.get(product_key)
                 if summary:
                     formatted_summary = self._format_product_summary(product_key, summary)
-                    return product_template.format(
-                        agent_name=agent.name,
-                        summary=formatted_summary
-                    )
+                    return product_template.format(agent_name=agent.name, summary=formatted_summary)
 
         return None
 
@@ -311,7 +296,9 @@ class ContextAssembler:
             credit_labels = labels.get("credit", {})
             if "hasActiveCredit" in summary:
                 label = credit_labels.get("active_credit", "Active credit")
-                yes_no = credit_labels.get("yes" if summary["hasActiveCredit"] else "no", "Yes" if summary["hasActiveCredit"] else "No")
+                yes_no = credit_labels.get(
+                    "yes" if summary["hasActiveCredit"] else "no", "Yes" if summary["hasActiveCredit"] else "No"
+                )
                 lines.append(f"- {label}: {yes_no}")
             if "currentBalance" in summary:
                 label = credit_labels.get("current_balance", "Current balance")
@@ -328,34 +315,30 @@ class ContextAssembler:
 
         return "\n".join(lines) if lines else str(summary)
 
-    def _build_flow_state_section(
-        self, session: ConversationSession, state: SubflowStateConfig
-    ) -> str:
+    def _build_flow_state_section(self, session: ConversationSession, state: SubflowStateConfig) -> str:
         """Build the current flow state section."""
         flow = session.current_flow or {}
         prompts = load_prompts()
 
         flow_template = prompts.get("sections", {}).get(
             "flow_state",
-            "\n## Current Flow State\nFlow: {flow_id}\nState: {state_id}\n\n### Instructions for this state:\n{instructions}"
+            "\n## Current Flow State\nFlow: {flow_id}\nState: {state_id}\n\n### Instructions for this state:\n{instructions}",
         )
 
         # Get instructions from config
         instructions = state.agent_instructions
 
         section = flow_template.format(
-            flow_id=flow.get('flowId', 'unknown'),
-            state_id=flow.get('currentState', 'unknown'),
-            instructions=instructions
+            flow_id=flow.get("flowId", "unknown"),
+            state_id=flow.get("currentState", "unknown"),
+            instructions=instructions,
         )
 
         # Append collected stateData so the LLM can see what's been gathered
-        state_data = flow.get('stateData', {}) or {}
-        visible_data = {k: v for k, v in state_data.items() if not k.startswith('_')}
+        state_data = flow.get("stateData", {}) or {}
+        visible_data = {k: v for k, v in state_data.items() if not k.startswith("_")}
         if visible_data:
-            collected_template = prompts.get("sections", {}).get(
-                "collected_data", "\nCollected data: {data}"
-            )
+            collected_template = prompts.get("sections", {}).get("collected_data", "\nCollected data: {data}")
             section += collected_template.format(data=json.dumps(visible_data, default=str))
 
         return section
@@ -367,12 +350,11 @@ class ContextAssembler:
 
         confirm_template = prompts.get("sections", {}).get(
             "confirmation_pending",
-            "\n## PENDING CONFIRMATION\nThe user must confirm the following action before you can proceed:\n{display_message}\n\nWait for explicit confirmation before executing {tool_name}."
+            "\n## PENDING CONFIRMATION\nThe user must confirm the following action before you can proceed:\n{display_message}\n\nWait for explicit confirmation before executing {tool_name}.",
         )
 
         return confirm_template.format(
-            display_message=pending.get('displayMessage', ''),
-            tool_name=pending.get('toolName', '')
+            display_message=pending.get("displayMessage", ""), tool_name=pending.get("toolName", "")
         )
 
     def _build_navigation_section(self, agent: AgentConfig) -> str:
@@ -386,7 +368,7 @@ class ContextAssembler:
         if agent.parent_agent_id is not None:
             scope_rule = sections_config.get(
                 "scope_rule",
-                "\n## CRITICAL SCOPE RULE\nYou have a specific scope. If the user asks for anything outside that scope, call go_home immediately."
+                "\n## CRITICAL SCOPE RULE\nYou have a specific scope. If the user asks for anything outside that scope, call go_home immediately.",
             )
             lines.append(scope_rule)
 
@@ -406,9 +388,11 @@ class ContextAssembler:
         return "\n".join(lines)
 
     def _build_tools(
-        self, agent: AgentConfig, current_flow_state: Optional[SubflowStateConfig] = None,
-        session: Optional["ConversationSession"] = None
-    ) -> List[dict]:
+        self,
+        agent: AgentConfig,
+        current_flow_state: SubflowStateConfig | None = None,
+        session: Optional["ConversationSession"] = None,
+    ) -> list[dict]:
         """
         Build the tools array for OpenAI.
 
@@ -469,8 +453,7 @@ class ContextAssembler:
             # NOT IN FLOW - use default_tools whitelist if defined
             tools = self._resolve_state_tools(agent.default_tools, agent)
             logger.debug(
-                f"Agent {agent.config_id}: using default_tools whitelist, "
-                f"{len(tools)} of {len(agent.tools)} tools"
+                f"Agent {agent.config_id}: using default_tools whitelist, {len(tools)} of {len(agent.tools)} tools"
             )
         else:
             # NOT IN A FLOW, NO WHITELIST - all agent tools available
@@ -486,55 +469,53 @@ class ContextAssembler:
         if agent.parent_agent_id is not None:
             go_home_desc = sections_config.get(
                 "go_home_tool",
-                "Transfer the conversation to the main assistant. Use this when the user asks for something outside your scope."
+                "Transfer the conversation to the main assistant. Use this when the user asks for something outside your scope.",
             )
-            tools.append({
-                "name": "go_home",
-                "description": go_home_desc,
-                "input_schema": {"type": "object", "properties": {}},
-            })
+            tools.append(
+                {
+                    "name": "go_home",
+                    "description": go_home_desc,
+                    "input_schema": {"type": "object", "properties": {}},
+                }
+            )
 
         # Optional navigation tools (configured per agent)
         if nav.get("canGoUp"):
-            up_desc = sections_config.get(
-                "up_one_level_tool",
-                "Go back to the previous agent/menu"
+            up_desc = sections_config.get("up_one_level_tool", "Go back to the previous agent/menu")
+            tools.append(
+                {
+                    "name": "up_one_level",
+                    "description": up_desc,
+                    "input_schema": {"type": "object", "properties": {}},
+                }
             )
-            tools.append({
-                "name": "up_one_level",
-                "description": up_desc,
-                "input_schema": {"type": "object", "properties": {}},
-            })
 
         if nav.get("canEscalate"):
             escalate_desc = sections_config.get(
                 "escalate_to_human_tool",
-                "Escalate to a human agent when the user requests it or when you cannot resolve the issue"
+                "Escalate to a human agent when the user requests it or when you cannot resolve the issue",
             )
-            reason_desc = sections_config.get(
-                "escalation_reason",
-                "Reason for escalation"
-            )
-            tools.append({
-                "name": "escalate_to_human",
-                "description": escalate_desc,
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "reason": {
-                            "type": "string",
-                            "description": reason_desc,
-                        }
+            reason_desc = sections_config.get("escalation_reason", "Reason for escalation")
+            tools.append(
+                {
+                    "name": "escalate_to_human",
+                    "description": escalate_desc,
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "reason": {
+                                "type": "string",
+                                "description": reason_desc,
+                            }
+                        },
+                        "required": ["reason"],
                     },
-                    "required": ["reason"],
-                },
-            })
+                }
+            )
 
         return tools
 
-    def _resolve_state_tools(
-        self, state_tools: List, agent: AgentConfig
-    ) -> List[dict]:
+    def _resolve_state_tools(self, state_tools: list, agent: AgentConfig) -> list[dict]:
         """
         Resolve state_tools which may be tool name strings or inline definitions.
 
@@ -553,9 +534,7 @@ class ContextAssembler:
                 if tool:
                     resolved.append(tool.to_openai_tool())
                 else:
-                    logger.warning(
-                        f"State tool '{tool_ref}' not found in agent {agent.config_id}"
-                    )
+                    logger.warning(f"State tool '{tool_ref}' not found in agent {agent.config_id}")
             elif isinstance(tool_ref, dict):
                 # It's an inline tool definition - convert using ToolConfig
                 inline_tool = ToolConfig.from_dict(tool_ref)
@@ -564,9 +543,7 @@ class ContextAssembler:
                 logger.warning(f"Unknown state_tools entry type: {type(tool_ref)}")
         return resolved
 
-    def _build_routing_context(
-        self, agent: AgentConfig, user_message: str, language: str
-    ) -> AssembledContext:
+    def _build_routing_context(self, agent: AgentConfig, user_message: str, language: str) -> AssembledContext:
         """
         Build minimal context for routing decisions only.
 
@@ -614,10 +591,7 @@ class ContextAssembler:
         temperature = model_cfg.get("temperature", settings.default_temperature)
         max_tokens = model_cfg.get("maxTokens", settings.default_max_tokens)
 
-        logger.debug(
-            f"ROUTING mode context: {token_counts['total_system']} system tokens, "
-            f"{len(tools)} routing tools"
-        )
+        logger.debug(f"ROUTING mode context: {token_counts['total_system']} system tokens, {len(tools)} routing tools")
 
         return AssembledContext(
             system_prompt=system_prompt,
@@ -629,7 +603,7 @@ class ContextAssembler:
             token_counts=token_counts,
         )
 
-    def _build_routing_tools(self, agent: AgentConfig) -> List[dict]:
+    def _build_routing_tools(self, agent: AgentConfig) -> list[dict]:
         """
         Build tools array containing only routing tools.
 
@@ -651,39 +625,42 @@ class ContextAssembler:
 
         # go_home for non-root agents (if not already added)
         if agent.parent_agent_id is not None and "go_home" not in tool_names_added:
-            go_home_desc = sections_config.get(
-                "go_home_tool",
-                "Transfer the conversation to the main assistant."
+            go_home_desc = sections_config.get("go_home_tool", "Transfer the conversation to the main assistant.")
+            tools.append(
+                {
+                    "name": "go_home",
+                    "description": go_home_desc,
+                    "input_schema": {"type": "object", "properties": {}},
+                }
             )
-            tools.append({
-                "name": "go_home",
-                "description": go_home_desc,
-                "input_schema": {"type": "object", "properties": {}},
-            })
 
         if nav.get("canGoUp") and "up_one_level" not in tool_names_added:
-            tools.append({
-                "name": "up_one_level",
-                "description": "Go back to the previous agent/menu",
-                "input_schema": {"type": "object", "properties": {}},
-            })
+            tools.append(
+                {
+                    "name": "up_one_level",
+                    "description": "Go back to the previous agent/menu",
+                    "input_schema": {"type": "object", "properties": {}},
+                }
+            )
 
         if nav.get("canEscalate") and "escalate_to_human" not in tool_names_added:
-            tools.append({
-                "name": "escalate_to_human",
-                "description": "Escalate to a human agent",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {"reason": {"type": "string"}},
-                    "required": ["reason"],
-                },
-            })
+            tools.append(
+                {
+                    "name": "escalate_to_human",
+                    "description": "Escalate to a human agent",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {"reason": {"type": "string"}},
+                        "required": ["reason"],
+                    },
+                }
+            )
 
         return tools
 
 
 # Global assembler instance
-_context_assembler: Optional[ContextAssembler] = None
+_context_assembler: ContextAssembler | None = None
 
 
 def get_context_assembler() -> ContextAssembler:

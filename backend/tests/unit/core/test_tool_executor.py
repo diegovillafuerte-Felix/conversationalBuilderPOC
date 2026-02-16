@@ -1,10 +1,11 @@
 """Unit tests for the ToolExecutor."""
 
-import pytest
 from uuid import uuid4
 
-from app.core.tool_executor import ToolExecutor, ToolResult
+import pytest
+
 from app.core.config_types import ToolConfig
+from app.core.tool_executor import ToolExecutor
 from app.models.session import ConversationSession
 
 
@@ -234,9 +235,7 @@ class TestToolExecutorServices:
         """Test that topups service methods are accessible."""
         executor = ToolExecutor()
 
-        result = await executor.execute_mock(
-            "get_carriers", {"country": "MX"}, "user_123"
-        )
+        result = await executor.execute_mock("get_carriers", {"country": "MX"}, "user_123")
 
         assert result.success is True
         assert "carriers" in result.data
@@ -246,9 +245,7 @@ class TestToolExecutorServices:
         """Test carrier detection through mock execution."""
         executor = ToolExecutor()
 
-        result = await executor.execute_mock(
-            "detect_carrier", {"phone_number": "+52 55 1234 5678"}, "user_123"
-        )
+        result = await executor.execute_mock("detect_carrier", {"phone_number": "+52 55 1234 5678"}, "user_123")
 
         assert result.success is True
         assert "carrier" in result.data

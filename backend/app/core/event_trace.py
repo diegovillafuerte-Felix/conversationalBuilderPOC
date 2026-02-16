@@ -1,14 +1,14 @@
 """Event tracing system for debugging routing, tool calling, and orchestration flows."""
 
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Optional, List
-import uuid
 
 
 class EventCategory(str, Enum):
     """Categories for trace events."""
+
     SESSION = "session"
     AGENT = "agent"
     FLOW = "flow"
@@ -23,6 +23,7 @@ class EventCategory(str, Enum):
 
 class EventLevel(str, Enum):
     """Severity levels for trace events."""
+
     INFO = "info"
     DEBUG = "debug"
     WARNING = "warning"
@@ -32,15 +33,16 @@ class EventLevel(str, Enum):
 @dataclass
 class TraceEvent:
     """A single trace event captured during message processing."""
+
     category: EventCategory
-    event_type: str           # e.g., "tool_executed", "agent_entered"
-    message: str              # Human-readable description
+    event_type: str  # e.g., "tool_executed", "agent_entered"
+    message: str  # Human-readable description
     timestamp: datetime = field(default_factory=datetime.utcnow)
     level: EventLevel = EventLevel.INFO
     data: dict = field(default_factory=dict)  # Event-specific payload
-    duration_ms: Optional[int] = None
-    parent_id: Optional[str] = None  # For nested events
-    turn_id: Optional[str] = None  # Groups events by message turn
+    duration_ms: int | None = None
+    parent_id: str | None = None  # For nested events
+    turn_id: str | None = None  # Groups events by message turn
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:8])
 
 
@@ -62,7 +64,7 @@ class EventTracer:
     """
 
     def __init__(self, turn_id: str = None, user_message: str = None):
-        self.events: List[TraceEvent] = []
+        self.events: list[TraceEvent] = []
         self._start_time = datetime.utcnow()
         self.turn_id = turn_id or uuid.uuid4().hex[:8]
         self.user_message = user_message
@@ -80,7 +82,7 @@ class EventTracer:
         level: EventLevel = EventLevel.INFO,
         data: dict = None,
         duration_ms: int = None,
-        parent_id: str = None
+        parent_id: str = None,
     ) -> str:
         """Add a trace event and return its ID.
 
@@ -129,7 +131,7 @@ class EventTracer:
             data=data,
         )
 
-    def to_list(self) -> List[dict]:
+    def to_list(self) -> list[dict]:
         """Export events as a serializable list for API response."""
         return [
             {

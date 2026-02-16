@@ -6,13 +6,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.config import get_settings
-from app.database import init_db, close_db, async_session_maker
-from app.routes import chat, admin
-from app.seed.users import seed_sample_users
-from app.core.config_loader import reload_configs, get_agent_ids
-from app.core.agent_registry import initialize_agent_registry, AgentRegistryError
 from app.clients.service_client import get_service_client
+from app.config import get_settings
+from app.core.agent_registry import AgentRegistryError, initialize_agent_registry
+from app.core.config_loader import get_agent_ids, reload_configs
+from app.database import async_session_maker, close_db, init_db
+from app.routes import admin, chat
+from app.seed.users import seed_sample_users
 
 # Configure logging
 logging.basicConfig(
@@ -105,10 +105,7 @@ async def root():
 @app.get("/health")
 async def health_check():
     """Health check endpoint with dependency verification."""
-    health_status = {
-        "status": "healthy",
-        "checks": {}
-    }
+    health_status = {"status": "healthy", "checks": {}}
 
     # Check services gateway connectivity
     try:

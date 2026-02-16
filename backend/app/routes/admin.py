@@ -1,22 +1,19 @@
 """Admin API routes for managing agents via JSON config files."""
 
 import logging
-from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Body, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, Body, Depends, HTTPException
 
+from app.auth import verify_admin_token
+from app.core.agent_registry import AgentRegistryError, get_agent_registry
 from app.core.config_loader import (
-    load_agent_config,
-    save_agent_config,
+    agent_exists,
     delete_agent_config,
     get_agent_ids,
-    agent_exists,
+    load_agent_config,
     reload_configs,
+    save_agent_config,
 )
-from app.database import get_db
-from app.auth import verify_admin_token
-from app.core.agent_registry import get_agent_registry, AgentRegistryError
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +24,8 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 # Helper Functions
 # ============================================================================
 
-def find_item_by_name(items: list, name: str) -> tuple[int, Optional[dict]]:
+
+def find_item_by_name(items: list, name: str) -> tuple[int, dict | None]:
     """Find an item in a list by its 'name' field."""
     for i, item in enumerate(items):
         if item.get("name") == name:
@@ -38,6 +36,7 @@ def find_item_by_name(items: list, name: str) -> tuple[int, Optional[dict]]:
 # ============================================================================
 # Config Reload Endpoint
 # ============================================================================
+
 
 @router.post("/reload-config")
 async def reload_config(_token: str = Depends(verify_admin_token)):
@@ -59,19 +58,16 @@ async def reload_config(_token: str = Depends(verify_admin_token)):
         registry.reload()
 
         agent_ids = get_agent_ids()
-        return {
-            "message": "Configs reloaded successfully",
-            "agents": agent_ids,
-            "count": len(agent_ids)
-        }
+        return {"message": "Configs reloaded successfully", "agents": agent_ids, "count": len(agent_ids)}
     except AgentRegistryError as e:
         logger.error(f"Failed to reload configs: {e}")
-        raise HTTPException(status_code=500, detail=f"Reload failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Reload failed: {e!s}") from e
 
 
 # ============================================================================
 # Agent Endpoints
 # ============================================================================
+
 
 @router.get("/agents")
 async def list_agents(_token: str = Depends(verify_admin_token)):
@@ -80,15 +76,17 @@ async def list_agents(_token: str = Depends(verify_admin_token)):
     for agent_id in get_agent_ids():
         config = load_agent_config(agent_id)
         if config:
-            agents.append({
-                "id": agent_id,
-                "name": config.get("name", agent_id),
-                "description": config.get("description", ""),
-                "parent_agent": config.get("parent_agent"),
-                "is_active": config.get("is_active", True),
-                "tools_count": len(config.get("tools", [])),
-                "subflows_count": len(config.get("subflows", [])),
-            })
+            agents.append(
+                {
+                    "id": agent_id,
+                    "name": config.get("name", agent_id),
+                    "description": config.get("description", ""),
+                    "parent_agent": config.get("parent_agent"),
+                    "is_active": config.get("is_active", True),
+                    "tools_count": len(config.get("tools", [])),
+                    "subflows_count": len(config.get("subflows", [])),
+                }
+            )
     return agents
 
 
@@ -119,11 +117,7 @@ async def get_agent(agent_id: str, _token: str = Depends(verify_admin_token)):
 
 
 @router.post("/agents/{agent_id}")
-async def create_agent(
-    agent_id: str,
-    config: dict = Body(...),
-    _token: str = Depends(verify_admin_token)
-):
+async def create_agent(agent_id: str, config: dict = Body(...), _token: str = Depends(verify_admin_token)):
     """Create a new agent JSON file."""
     if agent_exists(agent_id):
         raise HTTPException(status_code=400, detail="Agent already exists")
@@ -137,11 +131,7 @@ async def create_agent(
 
 
 @router.put("/agents/{agent_id}")
-async def update_agent(
-    agent_id: str,
-    updates: dict = Body(...),
-    _token: str = Depends(verify_admin_token)
-):
+async def update_agent(agent_id: str, updates: dict = Body(...), _token: str = Depends(verify_admin_token)):
     """Update agent config in JSON file."""
     config = load_agent_config(agent_id)
     if not config:
@@ -165,9 +155,7 @@ async def delete_agent(agent_id: str, _token: str = Depends(verify_admin_token))
 
 @router.post("/agents/{agent_id}/clone")
 async def clone_agent(
-    agent_id: str,
-    new_agent_id: str = Body(..., embed=True),
-    _token: str = Depends(verify_admin_token)
+    agent_id: str, new_agent_id: str = Body(..., embed=True), _token: str = Depends(verify_admin_token)
 ):
     """Clone an agent to a new JSON file."""
     config = load_agent_config(agent_id)
@@ -193,6 +181,7 @@ async def clone_agent(
 # Tool Endpoints (modify tools array in agent JSON)
 # ============================================================================
 
+
 @router.get("/agents/{agent_id}/tools")
 async def list_tools(agent_id: str, _token: str = Depends(verify_admin_token)):
     """List tools for an agent."""
@@ -203,11 +192,7 @@ async def list_tools(agent_id: str, _token: str = Depends(verify_admin_token)):
 
 
 @router.post("/agents/{agent_id}/tools")
-async def create_tool(
-    agent_id: str,
-    tool: dict = Body(...),
-    _token: str = Depends(verify_admin_token)
-):
+async def create_tool(agent_id: str, tool: dict = Body(...), _token: str = Depends(verify_admin_token)):
     """Add a tool to an agent's JSON config."""
     config = load_agent_config(agent_id)
     if not config:
@@ -230,19 +215,14 @@ async def create_tool(
 
 
 @router.put("/agents/{agent_id}/tools/{tool_name}")
-async def update_tool(
-    agent_id: str,
-    tool_name: str,
-    tool: dict = Body(...),
-    _token: str = Depends(verify_admin_token)
-):
+async def update_tool(agent_id: str, tool_name: str, tool: dict = Body(...), _token: str = Depends(verify_admin_token)):
     """Update a tool in an agent's JSON config."""
     config = load_agent_config(agent_id)
     if not config:
         raise HTTPException(status_code=404, detail="Agent not found")
 
     tools = config.get("tools", [])
-    idx, existing = find_item_by_name(tools, tool_name)
+    idx, _existing = find_item_by_name(tools, tool_name)
 
     if idx == -1:
         raise HTTPException(status_code=404, detail="Tool not found")
@@ -256,11 +236,7 @@ async def update_tool(
 
 
 @router.delete("/agents/{agent_id}/tools/{tool_name}")
-async def delete_tool(
-    agent_id: str,
-    tool_name: str,
-    _token: str = Depends(verify_admin_token)
-):
+async def delete_tool(agent_id: str, tool_name: str, _token: str = Depends(verify_admin_token)):
     """Delete a tool from an agent's JSON config."""
     config = load_agent_config(agent_id)
     if not config:
@@ -283,6 +259,7 @@ async def delete_tool(
 # Subflow Endpoints (modify subflows array in agent JSON)
 # ============================================================================
 
+
 @router.get("/agents/{agent_id}/subflows")
 async def list_subflows(agent_id: str, _token: str = Depends(verify_admin_token)):
     """List subflows for an agent."""
@@ -293,11 +270,7 @@ async def list_subflows(agent_id: str, _token: str = Depends(verify_admin_token)
 
 
 @router.get("/agents/{agent_id}/subflows/{subflow_id}")
-async def get_subflow(
-    agent_id: str,
-    subflow_id: str,
-    _token: str = Depends(verify_admin_token)
-):
+async def get_subflow(agent_id: str, subflow_id: str, _token: str = Depends(verify_admin_token)):
     """Get a specific subflow."""
     config = load_agent_config(agent_id)
     if not config:
@@ -312,11 +285,7 @@ async def get_subflow(
 
 
 @router.post("/agents/{agent_id}/subflows")
-async def create_subflow(
-    agent_id: str,
-    subflow: dict = Body(...),
-    _token: str = Depends(verify_admin_token)
-):
+async def create_subflow(agent_id: str, subflow: dict = Body(...), _token: str = Depends(verify_admin_token)):
     """Add a subflow to an agent's JSON config."""
     config = load_agent_config(agent_id)
     if not config:
@@ -340,10 +309,7 @@ async def create_subflow(
 
 @router.put("/agents/{agent_id}/subflows/{subflow_id}")
 async def update_subflow(
-    agent_id: str,
-    subflow_id: str,
-    subflow: dict = Body(...),
-    _token: str = Depends(verify_admin_token)
+    agent_id: str, subflow_id: str, subflow: dict = Body(...), _token: str = Depends(verify_admin_token)
 ):
     """Update a subflow in an agent's JSON config."""
     config = load_agent_config(agent_id)
@@ -363,11 +329,7 @@ async def update_subflow(
 
 
 @router.delete("/agents/{agent_id}/subflows/{subflow_id}")
-async def delete_subflow(
-    agent_id: str,
-    subflow_id: str,
-    _token: str = Depends(verify_admin_token)
-):
+async def delete_subflow(agent_id: str, subflow_id: str, _token: str = Depends(verify_admin_token)):
     """Delete a subflow from an agent's JSON config."""
     config = load_agent_config(agent_id)
     if not config:
@@ -389,12 +351,9 @@ async def delete_subflow(
 # Subflow State Endpoints (modify states array in subflow)
 # ============================================================================
 
+
 @router.get("/agents/{agent_id}/subflows/{subflow_id}/states")
-async def list_states(
-    agent_id: str,
-    subflow_id: str,
-    _token: str = Depends(verify_admin_token)
-):
+async def list_states(agent_id: str, subflow_id: str, _token: str = Depends(verify_admin_token)):
     """List states for a subflow."""
     config = load_agent_config(agent_id)
     if not config:
@@ -409,10 +368,7 @@ async def list_states(
 
 @router.post("/agents/{agent_id}/subflows/{subflow_id}/states")
 async def create_state(
-    agent_id: str,
-    subflow_id: str,
-    state: dict = Body(...),
-    _token: str = Depends(verify_admin_token)
+    agent_id: str, subflow_id: str, state: dict = Body(...), _token: str = Depends(verify_admin_token)
 ):
     """Add a state to a subflow."""
     config = load_agent_config(agent_id)
@@ -444,11 +400,7 @@ async def create_state(
 
 @router.put("/agents/{agent_id}/subflows/{subflow_id}/states/{state_id}")
 async def update_state(
-    agent_id: str,
-    subflow_id: str,
-    state_id: str,
-    state: dict = Body(...),
-    _token: str = Depends(verify_admin_token)
+    agent_id: str, subflow_id: str, state_id: str, state: dict = Body(...), _token: str = Depends(verify_admin_token)
 ):
     """Update a state in a subflow."""
     config = load_agent_config(agent_id)
@@ -475,12 +427,7 @@ async def update_state(
 
 
 @router.delete("/agents/{agent_id}/subflows/{subflow_id}/states/{state_id}")
-async def delete_state(
-    agent_id: str,
-    subflow_id: str,
-    state_id: str,
-    _token: str = Depends(verify_admin_token)
-):
+async def delete_state(agent_id: str, subflow_id: str, state_id: str, _token: str = Depends(verify_admin_token)):
     """Delete a state from a subflow."""
     config = load_agent_config(agent_id)
     if not config:
@@ -509,6 +456,7 @@ async def delete_state(
 # Response Template Endpoints (modify response_templates array in agent JSON)
 # ============================================================================
 
+
 @router.get("/agents/{agent_id}/templates")
 async def list_templates(agent_id: str, _token: str = Depends(verify_admin_token)):
     """List response templates for an agent."""
@@ -519,11 +467,7 @@ async def list_templates(agent_id: str, _token: str = Depends(verify_admin_token
 
 
 @router.post("/agents/{agent_id}/templates")
-async def create_template(
-    agent_id: str,
-    template: dict = Body(...),
-    _token: str = Depends(verify_admin_token)
-):
+async def create_template(agent_id: str, template: dict = Body(...), _token: str = Depends(verify_admin_token)):
     """Add a response template to an agent's JSON config."""
     config = load_agent_config(agent_id)
     if not config:
@@ -548,10 +492,7 @@ async def create_template(
 
 @router.put("/agents/{agent_id}/templates/{template_name}")
 async def update_template(
-    agent_id: str,
-    template_name: str,
-    template: dict = Body(...),
-    _token: str = Depends(verify_admin_token)
+    agent_id: str, template_name: str, template: dict = Body(...), _token: str = Depends(verify_admin_token)
 ):
     """Update a response template in an agent's JSON config."""
     config = load_agent_config(agent_id)
@@ -571,11 +512,7 @@ async def update_template(
 
 
 @router.delete("/agents/{agent_id}/templates/{template_name}")
-async def delete_template(
-    agent_id: str,
-    template_name: str,
-    _token: str = Depends(verify_admin_token)
-):
+async def delete_template(agent_id: str, template_name: str, _token: str = Depends(verify_admin_token)):
     """Delete a response template from an agent's JSON config."""
     config = load_agent_config(agent_id)
     if not config:

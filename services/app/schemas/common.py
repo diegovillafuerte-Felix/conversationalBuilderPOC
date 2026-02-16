@@ -1,6 +1,6 @@
 """Common schemas used across all services."""
 
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -9,9 +9,9 @@ class ServiceResponse(BaseModel):
     """Standard service response wrapper."""
 
     success: bool = True
-    data: Optional[Any] = None
-    error: Optional[str] = None
-    error_code: Optional[str] = None
+    data: Any | None = None
+    error: str | None = None
+    error_code: str | None = None
 
 
 class ErrorDetail(BaseModel):
@@ -19,4 +19,4 @@ class ErrorDetail(BaseModel):
 
     error: str
     error_code: str
-    details: Optional[dict] = None
+    details: dict | None = None

@@ -3,31 +3,13 @@
 import random
 import string
 from datetime import datetime, timedelta
-from typing import Optional
-
 
 # Eligibility tiers based on user history/KYC
 ELIGIBILITY_TIERS = {
-    "new_user": {
-        "min": 200,
-        "max": 300,
-        "base_apr": 35.99
-    },
-    "good_standing": {
-        "min": 200,
-        "max": 600,
-        "base_apr": 29.99
-    },
-    "excellent": {
-        "min": 200,
-        "max": 1000,
-        "base_apr": 24.99
-    },
-    "not_eligible": {
-        "min": 0,
-        "max": 0,
-        "base_apr": 0
-    }
+    "new_user": {"min": 200, "max": 300, "base_apr": 35.99},
+    "good_standing": {"min": 200, "max": 600, "base_apr": 29.99},
+    "excellent": {"min": 200, "max": 1000, "base_apr": 24.99},
+    "not_eligible": {"min": 0, "max": 0, "base_apr": 0},
 }
 
 # Available term options (weeks)
@@ -37,14 +19,14 @@ TERM_OPTIONS = [4, 8, 12, 16, 20, 26]
 def _generate_loan_id() -> str:
     """Generate a unique loan ID."""
     chars = string.ascii_uppercase + string.digits
-    suffix = ''.join(random.choices(chars, k=6))
+    suffix = "".join(random.choices(chars, k=6))
     return f"SNPL-{suffix}"
 
 
 def _generate_payment_id() -> str:
     """Generate a unique payment ID."""
     chars = string.ascii_uppercase + string.digits
-    suffix = ''.join(random.choices(chars, k=8))
+    suffix = "".join(random.choices(chars, k=8))
     return f"PAY-{suffix}"
 
 
@@ -62,7 +44,7 @@ class MockSNPLService:
             "user_demo": "good_standing",
             "user_new": "new_user",
             "user_premium": "excellent",
-            "user_blocked": "not_eligible"
+            "user_blocked": "not_eligible",
         }
 
         # Active and historical loans
@@ -90,8 +72,8 @@ class MockSNPLService:
                         "transfer_id": "TXN-ABC789",
                         "recipient_name": "María García",
                         "amount_usd": 500.00,
-                        "country": "MX"
-                    }
+                        "country": "MX",
+                    },
                 },
                 {
                     "loan_id": "SNPL-DEMO02",
@@ -116,9 +98,9 @@ class MockSNPLService:
                         "transfer_id": "TXN-XYZ456",
                         "recipient_name": "Carlos López",
                         "amount_usd": 300.00,
-                        "country": "GT"
-                    }
-                }
+                        "country": "GT",
+                    },
+                },
             ]
         }
 
@@ -141,7 +123,7 @@ class MockSNPLService:
                 {"payment_id": "PAY-D02P006", "amount": 40.38, "date": "2025-10-13", "status": "COMPLETED"},
                 {"payment_id": "PAY-D02P007", "amount": 40.38, "date": "2025-10-20", "status": "COMPLETED"},
                 {"payment_id": "PAY-D02P008", "amount": 40.38, "date": "2025-10-27", "status": "COMPLETED"},
-            ]
+            ],
         }
 
     # ==================== ELIGIBILITY ====================
@@ -152,11 +134,7 @@ class MockSNPLService:
         tier = ELIGIBILITY_TIERS[tier_key]
 
         if tier_key == "not_eligible":
-            return {
-                "eligible": False,
-                "tier": tier_key,
-                "reason": "insufficient_payment_history"
-            }
+            return {"eligible": False, "tier": tier_key, "reason": "insufficient_payment_history"}
 
         return {
             "eligible": True,
@@ -164,7 +142,7 @@ class MockSNPLService:
             "min_amount": tier["min"],
             "max_amount": tier["max"],
             "base_apr": tier["base_apr"],
-            "term_options": TERM_OPTIONS
+            "term_options": TERM_OPTIONS,
         }
 
     # ==================== TERMS CALCULATION ====================
@@ -173,15 +151,11 @@ class MockSNPLService:
         """Calculate loan terms for given amount and duration."""
         # Validate amount
         if amount < 200 or amount > 1000:
-            return {
-                "error": "INVALID_AMOUNT"
-            }
+            return {"error": "INVALID_AMOUNT"}
 
         # Validate weeks
         if weeks not in TERM_OPTIONS:
-            return {
-                "error": "INVALID_TERM"
-            }
+            return {"error": "INVALID_TERM"}
 
         # Get user's APR based on tier
         tier_key = self._user_eligibility.get(user_id, "new_user")
@@ -206,7 +180,7 @@ class MockSNPLService:
             "total_interest": round(total_interest, 2),
             "total_repayment": round(total_repayment, 2),
             "first_payment_date": first_payment.strftime("%Y-%m-%d"),
-            "final_payment_date": final_payment.strftime("%Y-%m-%d")
+            "final_payment_date": final_payment.strftime("%Y-%m-%d"),
         }
 
     # ==================== APPLICATION ====================
@@ -216,41 +190,23 @@ class MockSNPLService:
         # Check eligibility first
         eligibility = self.get_snpl_eligibility(user_id)
         if not eligibility.get("eligible"):
-            return {
-                "approved": False,
-                "error": "NOT_ELIGIBLE",
-                "reason": eligibility.get("reason", "not_eligible")
-            }
+            return {"approved": False, "error": "NOT_ELIGIBLE", "reason": eligibility.get("reason", "not_eligible")}
 
         # Check amount against eligibility
         if amount > eligibility["max_amount"]:
-            return {
-                "approved": False,
-                "error": "AMOUNT_EXCEEDS_LIMIT",
-                "max_amount": eligibility["max_amount"]
-            }
+            return {"approved": False, "error": "AMOUNT_EXCEEDS_LIMIT", "max_amount": eligibility["max_amount"]}
 
         if amount < eligibility["min_amount"]:
-            return {
-                "approved": False,
-                "error": "AMOUNT_BELOW_MINIMUM",
-                "min_amount": eligibility["min_amount"]
-            }
+            return {"approved": False, "error": "AMOUNT_BELOW_MINIMUM", "min_amount": eligibility["min_amount"]}
 
         # Calculate terms
         terms = self.calculate_terms(amount, term_weeks, user_id)
         if "error" in terms:
-            return {
-                "approved": False,
-                "error": terms["error"]
-            }
+            return {"approved": False, "error": terms["error"]}
 
         # Simulate approval (95% success rate)
         if random.random() < 0.05:
-            return {
-                "approved": False,
-                "error": "APPLICATION_DENIED"
-            }
+            return {"approved": False, "error": "APPLICATION_DENIED"}
 
         # Create new loan
         loan_id = _generate_loan_id()
@@ -276,7 +232,7 @@ class MockSNPLService:
             "next_payment_date": first_payment.strftime("%Y-%m-%d"),
             "next_payment_amount": terms["weekly_payment"],
             "final_payment_date": final_payment.strftime("%Y-%m-%d"),
-            "remittance": None  # Will be set when used for remittance
+            "remittance": None,  # Will be set when used for remittance
         }
 
         # Store the loan
@@ -312,11 +268,7 @@ class MockSNPLService:
         active_loans = [l for l in user_loans if l["status"] == "ACTIVE"]
 
         if not active_loans:
-            return {
-                "active_count": 0,
-                "total_balance": 0,
-                "has_loans": len(user_loans) > 0
-            }
+            return {"active_count": 0, "total_balance": 0, "has_loans": len(user_loans) > 0}
 
         total_balance = sum(l["balance_remaining"] for l in active_loans)
 
@@ -335,10 +287,10 @@ class MockSNPLService:
                     "loan_id": l["loan_id"],
                     "amount": l["amount"],
                     "balance_remaining": l["balance_remaining"],
-                    "next_payment_date": l["next_payment_date"]
+                    "next_payment_date": l["next_payment_date"],
                 }
                 for l in active_loans
-            ]
+            ],
         }
 
     def get_loan_details(self, loan_id: str, user_id: str = "user_demo") -> dict:
@@ -347,15 +299,11 @@ class MockSNPLService:
         loan = next((l for l in user_loans if l["loan_id"] == loan_id), None)
 
         if not loan:
-            return {
-                "error": "LOAN_NOT_FOUND"
-            }
+            return {"error": "LOAN_NOT_FOUND"}
 
-        return {
-            **loan
-        }
+        return {**loan}
 
-    def list_loans(self, user_id: str = "user_demo", status: Optional[str] = None) -> dict:
+    def list_loans(self, user_id: str = "user_demo", status: str | None = None) -> dict:
         """List all loans for a user, optionally filtered by status."""
         user_loans = self._loans.get(user_id, [])
 
@@ -364,25 +312,21 @@ class MockSNPLService:
 
         loans_summary = []
         for loan in user_loans:
-            loans_summary.append({
-                "loan_id": loan["loan_id"],
-                "amount": loan["amount"],
-                "balance_remaining": loan["balance_remaining"],
-                "status": loan["status"],
-                "created_at": loan["created_at"],
-                "recipient_name": loan["remittance"]["recipient_name"] if loan.get("remittance") else None
-            })
+            loans_summary.append(
+                {
+                    "loan_id": loan["loan_id"],
+                    "amount": loan["amount"],
+                    "balance_remaining": loan["balance_remaining"],
+                    "status": loan["status"],
+                    "created_at": loan["created_at"],
+                    "recipient_name": loan["remittance"]["recipient_name"] if loan.get("remittance") else None,
+                }
+            )
 
         if not loans_summary:
-            return {
-                "loans": [],
-                "count": 0
-            }
+            return {"loans": [], "count": 0}
 
-        return {
-            "loans": loans_summary,
-            "count": len(loans_summary)
-        }
+        return {"loans": loans_summary, "count": len(loans_summary)}
 
     # ==================== PAYMENT SCHEDULE & HISTORY ====================
 
@@ -392,9 +336,7 @@ class MockSNPLService:
         loan = next((l for l in user_loans if l["loan_id"] == loan_id), None)
 
         if not loan:
-            return {
-                "error": "LOAN_NOT_FOUND"
-            }
+            return {"error": "LOAN_NOT_FOUND"}
 
         # Generate schedule
         schedule = []
@@ -413,22 +355,24 @@ class MockSNPLService:
             else:
                 status = "SCHEDULED"
 
-            schedule.append({
-                "payment_number": i + 1,
-                "date": payment_date.strftime("%Y-%m-%d"),
-                "amount": loan["weekly_payment"],
-                "status": status
-            })
+            schedule.append(
+                {
+                    "payment_number": i + 1,
+                    "date": payment_date.strftime("%Y-%m-%d"),
+                    "amount": loan["weekly_payment"],
+                    "status": status,
+                }
+            )
 
         return {
             "loan_id": loan_id,
             "schedule": schedule,
             "total_payments": loan["term_weeks"],
             "completed_payments": completed_count,
-            "remaining_payments": loan["payments_remaining"]
+            "remaining_payments": loan["payments_remaining"],
         }
 
-    def get_payment_history(self, loan_id: Optional[str] = None, user_id: str = "user_demo", limit: int = 10) -> dict:
+    def get_payment_history(self, loan_id: str | None = None, user_id: str = "user_demo", limit: int = 10) -> dict:
         """Get payment history for a loan or all loans."""
         all_payments = []
 
@@ -437,9 +381,7 @@ class MockSNPLService:
             user_loans = self._loans.get(user_id, [])
             loan = next((l for l in user_loans if l["loan_id"] == loan_id), None)
             if not loan:
-                return {
-                    "error": "LOAN_NOT_FOUND"
-                }
+                return {"error": "LOAN_NOT_FOUND"}
             payments = self._payments.get(loan_id, [])
             all_payments = [{"loan_id": loan_id, **p} for p in payments]
         else:
@@ -454,50 +396,32 @@ class MockSNPLService:
         all_payments = all_payments[:limit]
 
         if not all_payments:
-            return {
-                "payments": [],
-                "count": 0
-            }
+            return {"payments": [], "count": 0}
 
-        return {
-            "payments": all_payments,
-            "count": len(all_payments)
-        }
+        return {"payments": all_payments, "count": len(all_payments)}
 
     # ==================== MAKE PAYMENT ====================
 
     def make_snpl_payment(
-        self,
-        loan_id: str,
-        amount: float,
-        payment_method_id: Optional[str] = None,
-        user_id: str = "user_demo"
+        self, loan_id: str, amount: float, payment_method_id: str | None = None, user_id: str = "user_demo"
     ) -> dict:
         """Make a payment on an SNPL loan."""
         user_loans = self._loans.get(user_id, [])
         loan_idx = next((i for i, l in enumerate(user_loans) if l["loan_id"] == loan_id), None)
 
         if loan_idx is None:
-            return {
-                "error": "LOAN_NOT_FOUND"
-            }
+            return {"error": "LOAN_NOT_FOUND"}
 
         loan = user_loans[loan_idx]
 
         if loan["status"] != "ACTIVE":
-            return {
-                "error": "LOAN_NOT_ACTIVE"
-            }
+            return {"error": "LOAN_NOT_ACTIVE"}
 
         if amount <= 0:
-            return {
-                "error": "INVALID_AMOUNT"
-            }
+            return {"error": "INVALID_AMOUNT"}
 
         if amount > loan["balance_remaining"]:
-            return {
-                "error": "AMOUNT_EXCEEDS_BALANCE"
-            }
+            return {"error": "AMOUNT_EXCEEDS_BALANCE"}
 
         # Process payment
         payment_id = _generate_payment_id()
@@ -532,7 +456,7 @@ class MockSNPLService:
             "payment_id": payment_id,
             "amount": amount,
             "date": now.strftime("%Y-%m-%d"),
-            "status": "COMPLETED"
+            "status": "COMPLETED",
         }
         if loan_id not in self._payments:
             self._payments[loan_id] = []
@@ -563,30 +487,26 @@ class MockSNPLService:
         recipient_name: str,
         amount_usd: float,
         country: str,
-        user_id: str = "user_demo"
+        user_id: str = "user_demo",
     ) -> dict:
         """Link an SNPL loan to a remittance transfer."""
         user_loans = self._loans.get(user_id, [])
         loan_idx = next((i for i, l in enumerate(user_loans) if l["loan_id"] == loan_id), None)
 
         if loan_idx is None:
-            return {
-                "error": "LOAN_NOT_FOUND"
-            }
+            return {"error": "LOAN_NOT_FOUND"}
 
         loan = user_loans[loan_idx]
 
         if loan.get("remittance"):
-            return {
-                "error": "LOAN_ALREADY_USED"
-            }
+            return {"error": "LOAN_ALREADY_USED"}
 
         # Link remittance to loan
         loan["remittance"] = {
             "transfer_id": transfer_id,
             "recipient_name": recipient_name,
             "amount_usd": amount_usd,
-            "country": country
+            "country": country,
         }
 
         return {
@@ -615,6 +535,8 @@ class MockSNPLService:
         """Alias for submit_snpl_application."""
         return self.submit_snpl_application(amount, term_weeks, user_id)
 
-    def make_payment(self, loan_id: str, amount: float, payment_method_id: Optional[str] = None, user_id: str = "user_demo") -> dict:
+    def make_payment(
+        self, loan_id: str, amount: float, payment_method_id: str | None = None, user_id: str = "user_demo"
+    ) -> dict:
         """Alias for make_snpl_payment."""
         return self.make_snpl_payment(loan_id, amount, payment_method_id, user_id)

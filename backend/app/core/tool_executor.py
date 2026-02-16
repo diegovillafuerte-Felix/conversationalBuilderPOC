@@ -2,14 +2,14 @@
 
 import logging
 import re
-from typing import Optional, Any
 from dataclasses import dataclass
+from typing import Any
 
-from app.models.session import ConversationSession
-from app.core.config_types import ToolConfig
-from app.core.template_renderer import get_template_renderer
 from app.clients.service_client import ServiceClient, get_service_client
 from app.clients.service_mapping import SERVICE_MAPPING
+from app.core.config_types import ToolConfig
+from app.core.template_renderer import get_template_renderer
+from app.models.session import ConversationSession
 
 logger = logging.getLogger(__name__)
 
@@ -20,9 +20,9 @@ class ToolResult:
 
     success: bool
     data: Any
-    error: Optional[str] = None
+    error: str | None = None
     requires_confirmation: bool = False
-    confirmation_message: Optional[str] = None
+    confirmation_message: str | None = None
 
 
 class ToolExecutor:
@@ -78,9 +78,7 @@ class ToolExecutor:
             logger.error(f"Tool execution failed: {tool.name} - {e}")
             return ToolResult(success=False, data=None, error=str(e))
 
-    async def execute_mock(
-        self, tool_name: str, params: dict, user_id: str
-    ) -> ToolResult:
+    async def execute_mock(self, tool_name: str, params: dict, user_id: str) -> ToolResult:
         """Execute a tool directly by name via HTTP (for service tools without DB definition)."""
         # Note: Navigation, agent entry, and flow start tools are now handled by RoutingHandler.
         # This method is only for service tools that don't have a Tool record in the database.
@@ -136,9 +134,7 @@ class ToolExecutor:
                 error=result.error,
             )
 
-    async def _call_service(
-        self, tool: ToolConfig, params: dict, session: ConversationSession
-    ) -> Any:
+    async def _call_service(self, tool: ToolConfig, params: dict, session: ConversationSession) -> Any:
         """Call the service via HTTP with validation."""
         tool_name = tool.name
 
@@ -206,9 +202,7 @@ class ToolExecutor:
         logger.warning(f"API call for {tool.name} not implemented, returning mock success")
         return {"status": "success", "message": "Mock API response"}
 
-    def _render_confirmation(
-        self, tool: ToolConfig, params: dict, session: ConversationSession
-    ) -> str:
+    def _render_confirmation(self, tool: ToolConfig, params: dict, session: ConversationSession) -> str:
         """Render the confirmation message template."""
         template = tool.confirmation_template or f"¿Confirmas ejecutar {tool.name}?"
 
@@ -291,7 +285,7 @@ class ToolExecutor:
 
         return normalized
 
-    def classify_user_confirmation(self, message: str) -> Optional[bool]:
+    def classify_user_confirmation(self, message: str) -> bool | None:
         """
         Classify if a user message is a confirmation or denial.
 
@@ -377,7 +371,7 @@ class ToolExecutor:
                 try:
                     validated[name] = self._coerce_type(params[name], param_type)
                 except (ValueError, TypeError) as e:
-                    raise ValueError(f"Invalid type for parameter '{name}': {e}")
+                    raise ValueError(f"Invalid type for parameter '{name}': {e}") from e
 
         return validated
 
@@ -452,7 +446,7 @@ class ToolExecutor:
             return type_map[expected_type](value)
 
         except (ValueError, TypeError) as e:
-            raise ValueError(f"Cannot coerce {value} to {expected_type}: {e}")
+            raise ValueError(f"Cannot coerce {value} to {expected_type}: {e}") from e
 
     def _sanitize_params(self, params: dict) -> dict:
         """
@@ -469,10 +463,10 @@ class ToolExecutor:
         for key, value in params.items():
             if isinstance(value, str):
                 # Remove null bytes (can cause issues with C libraries)
-                value = value.replace('\x00', '')
+                value = value.replace("\x00", "")
 
                 # Remove other control characters except newlines and tabs
-                value = ''.join(char for char in value if char.isprintable() or char in '\n\t')
+                value = "".join(char for char in value if char.isprintable() or char in "\n\t")
 
                 # Strip excessive whitespace
                 value = value.strip()
@@ -490,8 +484,10 @@ class ToolExecutor:
             elif isinstance(value, list):
                 # Sanitize lists
                 value = [
-                    self._sanitize_params(item) if isinstance(item, dict)
-                    else item.replace('\x00', '') if isinstance(item, str)
+                    self._sanitize_params(item)
+                    if isinstance(item, dict)
+                    else item.replace("\x00", "")
+                    if isinstance(item, str)
                     else item
                     for item in value
                 ]
@@ -502,7 +498,7 @@ class ToolExecutor:
 
 
 # Global executor instance
-_tool_executor: Optional[ToolExecutor] = None
+_tool_executor: ToolExecutor | None = None
 
 
 def get_tool_executor() -> ToolExecutor:

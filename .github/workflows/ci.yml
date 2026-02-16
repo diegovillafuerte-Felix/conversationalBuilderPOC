@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    name: Lint & Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install ruff
+        run: pip install "ruff>=0.8.0"
+      - name: Lint backend
+        run: ruff check backend/app/ backend/tests/ --config backend/pyproject.toml
+      - name: Lint services
+        run: ruff check services/app/ services/tests/ --config services/pyproject.toml
+      - name: Format check backend
+        run: ruff format --check backend/app/ backend/tests/ --config backend/pyproject.toml
+      - name: Format check services
+        run: ruff format --check services/app/ services/tests/ --config services/pyproject.toml
+
+  typecheck:
+    name: Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          pip install -r backend/requirements.txt
+          pip install "mypy>=1.13.0"
+      - name: Run mypy
+        run: cd backend && mypy app/ --config-file pyproject.toml
+
+  test-unit:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    env:
+      OPENAI_API_KEY: sk-test-fake
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r backend/requirements.txt
+      - name: Run unit tests
+        run: cd backend && python -m pytest tests/unit -v
+
+  test-services:
+    name: Services Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r services/requirements.txt
+      - name: Run services tests
+        run: cd services && python -m pytest tests/ -v

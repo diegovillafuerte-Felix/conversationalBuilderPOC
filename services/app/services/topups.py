@@ -3,7 +3,6 @@
 import random
 import string
 from datetime import datetime
-from typing import Optional
 
 
 def _random_string(length: int = 8) -> str:
@@ -24,10 +23,30 @@ class MockTopUpsService:
                     "logo": "telcel.png",
                     "currency": "MXN",
                     "plans": [
-                        {"amount": 50, "description": "Amigo Sin Límite 50 - 500MB + 50 min", "data": "500MB", "minutes": 50},
-                        {"amount": 100, "description": "Amigo Sin Límite 100 - 1.5GB + 100 min", "data": "1.5GB", "minutes": 100},
-                        {"amount": 200, "description": "Amigo Sin Límite 200 - 3GB + ilimitados", "data": "3GB", "minutes": "ilimitados"},
-                        {"amount": 500, "description": "Amigo Sin Límite 500 - 8GB + ilimitados + Redes Sociales", "data": "8GB", "minutes": "ilimitados"},
+                        {
+                            "amount": 50,
+                            "description": "Amigo Sin Límite 50 - 500MB + 50 min",
+                            "data": "500MB",
+                            "minutes": 50,
+                        },
+                        {
+                            "amount": 100,
+                            "description": "Amigo Sin Límite 100 - 1.5GB + 100 min",
+                            "data": "1.5GB",
+                            "minutes": 100,
+                        },
+                        {
+                            "amount": 200,
+                            "description": "Amigo Sin Límite 200 - 3GB + ilimitados",
+                            "data": "3GB",
+                            "minutes": "ilimitados",
+                        },
+                        {
+                            "amount": 500,
+                            "description": "Amigo Sin Límite 500 - 8GB + ilimitados + Redes Sociales",
+                            "data": "8GB",
+                            "minutes": "ilimitados",
+                        },
                     ],
                 },
                 {
@@ -38,7 +57,12 @@ class MockTopUpsService:
                     "plans": [
                         {"amount": 50, "description": "Movistar 50 - 300MB + 30 min", "data": "300MB", "minutes": 30},
                         {"amount": 100, "description": "Movistar 100 - 1GB + 60 min", "data": "1GB", "minutes": 60},
-                        {"amount": 200, "description": "Movistar 200 - 2.5GB + ilimitados", "data": "2.5GB", "minutes": "ilimitados"},
+                        {
+                            "amount": 200,
+                            "description": "Movistar 200 - 2.5GB + ilimitados",
+                            "data": "2.5GB",
+                            "minutes": "ilimitados",
+                        },
                     ],
                 },
                 {
@@ -49,8 +73,18 @@ class MockTopUpsService:
                     "plans": [
                         {"amount": 50, "description": "AT&T Prepago 50 - 400MB", "data": "400MB", "minutes": 40},
                         {"amount": 100, "description": "AT&T Prepago 100 - 1GB", "data": "1GB", "minutes": 80},
-                        {"amount": 200, "description": "AT&T Prepago 200 - 2GB", "data": "2GB", "minutes": "ilimitados"},
-                        {"amount": 300, "description": "AT&T Prepago 300 - 4GB", "data": "4GB", "minutes": "ilimitados"},
+                        {
+                            "amount": 200,
+                            "description": "AT&T Prepago 200 - 2GB",
+                            "data": "2GB",
+                            "minutes": "ilimitados",
+                        },
+                        {
+                            "amount": 300,
+                            "description": "AT&T Prepago 300 - 4GB",
+                            "data": "4GB",
+                            "minutes": "ilimitados",
+                        },
                     ],
                 },
                 {
@@ -59,9 +93,24 @@ class MockTopUpsService:
                     "logo": "unefon.png",
                     "currency": "MXN",
                     "plans": [
-                        {"amount": 50, "description": "Unefon 50 - 500MB ilimitados", "data": "500MB", "minutes": "ilimitados"},
-                        {"amount": 100, "description": "Unefon 100 - 1.5GB ilimitados", "data": "1.5GB", "minutes": "ilimitados"},
-                        {"amount": 150, "description": "Unefon 150 - 2GB ilimitados", "data": "2GB", "minutes": "ilimitados"},
+                        {
+                            "amount": 50,
+                            "description": "Unefon 50 - 500MB ilimitados",
+                            "data": "500MB",
+                            "minutes": "ilimitados",
+                        },
+                        {
+                            "amount": 100,
+                            "description": "Unefon 100 - 1.5GB ilimitados",
+                            "data": "1.5GB",
+                            "minutes": "ilimitados",
+                        },
+                        {
+                            "amount": 150,
+                            "description": "Unefon 150 - 2GB ilimitados",
+                            "data": "2GB",
+                            "minutes": "ilimitados",
+                        },
                     ],
                 },
             ],
@@ -115,7 +164,7 @@ class MockTopUpsService:
             "country": country.upper(),
         }
 
-    def get_carrier(self, carrier_id: str, country: str = "MX") -> Optional[dict]:
+    def get_carrier(self, carrier_id: str, country: str = "MX") -> dict | None:
         """Get a specific carrier."""
         carriers_data = self.get_carriers(country)
         carriers = carriers_data.get("carriers", []) if isinstance(carriers_data, dict) else carriers_data
@@ -128,9 +177,7 @@ class MockTopUpsService:
 
     def get_frequent_numbers(self, user_id: str) -> dict:
         """Get user's frequently topped-up numbers."""
-        numbers = self._frequent_numbers.get(
-            user_id, self._frequent_numbers.get("user_demo", [])
-        )
+        numbers = self._frequent_numbers.get(user_id, self._frequent_numbers.get("user_demo", []))
 
         return {
             "numbers": numbers,
@@ -220,7 +267,7 @@ class MockTopUpsService:
         carrier_id: str,
         amount: float,
         payment_method_id: str = "pm_default",
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
     ) -> dict:
         """Send a top-up."""
         pricing = self.get_topup_price(carrier_id, amount)

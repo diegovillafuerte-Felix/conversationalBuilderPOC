@@ -1,13 +1,10 @@
 """SNPL (Send Now Pay Later) service API router."""
 
-from typing import Optional
-
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 
-from app.services.snpl import MockSNPLService
 from app.schemas.common import ServiceResponse
-
+from app.services.snpl import MockSNPLService
 
 router = APIRouter(prefix="/snpl", tags=["snpl"])
 
@@ -27,25 +24,29 @@ def get_service(language: str = "es") -> MockSNPLService:
 
 class CalculateTermsRequest(BaseModel):
     """Request to calculate loan terms."""
+
     amount: float = Field(gt=0, le=1000)
     weeks: int = Field(gt=0)
 
 
 class SubmitApplicationRequest(BaseModel):
     """Request to submit SNPL application."""
+
     amount: float = Field(gt=0, le=1000)
     term_weeks: int = Field(gt=0)
 
 
 class MakePaymentRequest(BaseModel):
     """Request to make a payment."""
-    loan_id: Optional[str] = None
+
+    loan_id: str | None = None
     amount: float = Field(gt=0)
     payment_method_id: str = "pm_default"
 
 
 class UseForRemittanceRequest(BaseModel):
     """Request to use credit for remittance."""
+
     transfer_id: str
     recipient_name: str
     amount_usd: float = Field(gt=0)
@@ -127,7 +128,7 @@ async def get_snpl_overview(
 
 @router.get("/loans")
 async def list_loans(
-    status: Optional[str] = None,
+    status: str | None = None,
     x_user_id: str = Header("user_demo", alias="X-User-Id"),
     accept_language: str = Header("es", alias="Accept-Language"),
 ) -> ServiceResponse:
@@ -192,7 +193,7 @@ async def use_credit_for_remittance(
 
 @router.get("/payments")
 async def get_payment_history(
-    loan_id: Optional[str] = None,
+    loan_id: str | None = None,
     limit: int = 10,
     x_user_id: str = Header("user_demo", alias="X-User-Id"),
     accept_language: str = Header("es", alias="Accept-Language"),
@@ -210,7 +211,7 @@ async def get_payment_history(
 @router.post("/payments")
 async def make_snpl_payment(
     request: MakePaymentRequest,
-    loan_id: Optional[str] = None,
+    loan_id: str | None = None,
     x_user_id: str = Header("user_demo", alias="X-User-Id"),
     accept_language: str = Header("es", alias="Accept-Language"),
 ) -> ServiceResponse:

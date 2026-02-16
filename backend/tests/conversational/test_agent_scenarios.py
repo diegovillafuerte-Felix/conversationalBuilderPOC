@@ -1,11 +1,10 @@
 """Pytest integration for running conversational test scenarios."""
 
 import pytest
-from pathlib import Path
 
+from .conftest import get_all_agent_scenarios
 from .runner import ConversationalTestRunner
 from .schemas import TestScenario
-from .conftest import get_all_agent_scenarios
 
 
 def scenario_id(val):
@@ -29,7 +28,7 @@ class TestAgentScenarios:
     )
     async def test_scenario(self, db_session, mock_llm_client, agent_scenario):
         """Run a single test scenario from agent configs."""
-        agent_name, scenario = agent_scenario
+        _agent_name, scenario = agent_scenario
 
         if not scenario.enabled:
             pytest.skip(f"Scenario {scenario.id} is disabled")
@@ -116,8 +115,8 @@ class TestResponseValidator:
 
     def test_validate_contains_text_pass(self):
         """Test contains_text validation passing."""
-        from .validators import ResponseValidator
         from .schemas import ExpectedBehavior
+        from .validators import ResponseValidator
 
         validator = ResponseValidator()
         behavior = ExpectedBehavior(
@@ -135,8 +134,8 @@ class TestResponseValidator:
 
     def test_validate_contains_text_fail(self):
         """Test contains_text validation failing."""
-        from .validators import ResponseValidator
         from .schemas import ExpectedBehavior
+        from .validators import ResponseValidator
 
         validator = ResponseValidator()
         behavior = ExpectedBehavior(
@@ -154,8 +153,8 @@ class TestResponseValidator:
 
     def test_validate_contains_any_pass(self):
         """Test contains_any validation passing."""
-        from .validators import ResponseValidator
         from .schemas import ExpectedBehavior
+        from .validators import ResponseValidator
 
         validator = ResponseValidator()
         behavior = ExpectedBehavior(
@@ -173,8 +172,8 @@ class TestResponseValidator:
 
     def test_validate_tool_call_pass(self):
         """Test tool_call validation passing."""
-        from .validators import ResponseValidator
         from .schemas import ExpectedBehavior
+        from .validators import ResponseValidator
 
         validator = ResponseValidator()
         behavior = ExpectedBehavior(
@@ -192,8 +191,8 @@ class TestResponseValidator:
 
     def test_validate_tool_call_fail(self):
         """Test tool_call validation failing."""
-        from .validators import ResponseValidator
         from .schemas import ExpectedBehavior
+        from .validators import ResponseValidator
 
         validator = ResponseValidator()
         behavior = ExpectedBehavior(
@@ -211,8 +210,8 @@ class TestResponseValidator:
 
     def test_validate_not_contains_pass(self):
         """Test not_contains validation passing."""
-        from .validators import ResponseValidator
         from .schemas import ExpectedBehavior
+        from .validators import ResponseValidator
 
         validator = ResponseValidator()
         behavior = ExpectedBehavior(
@@ -230,8 +229,8 @@ class TestResponseValidator:
 
     def test_validate_regex_match_pass(self):
         """Test regex_match validation passing."""
-        from .validators import ResponseValidator
         from .schemas import ExpectedBehavior
+        from .validators import ResponseValidator
 
         validator = ResponseValidator()
         behavior = ExpectedBehavior(
@@ -249,8 +248,8 @@ class TestResponseValidator:
 
     def test_validate_flow_state_pass(self):
         """Test flow_state validation passing."""
-        from .validators import ResponseValidator
         from .schemas import ExpectedBehavior
+        from .validators import ResponseValidator
 
         validator = ResponseValidator()
         behavior = ExpectedBehavior(

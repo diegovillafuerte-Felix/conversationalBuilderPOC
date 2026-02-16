@@ -2,7 +2,7 @@
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any
 
 import httpx
 
@@ -14,9 +14,9 @@ class ServiceResult:
     """Result from a service call."""
 
     success: bool
-    data: Optional[Any] = None
-    error: Optional[str] = None
-    error_code: Optional[str] = None
+    data: Any | None = None
+    error: str | None = None
+    error_code: str | None = None
 
 
 class ServiceClient:
@@ -24,7 +24,7 @@ class ServiceClient:
 
     def __init__(
         self,
-        base_url: Optional[str] = None,
+        base_url: str | None = None,
         timeout: float = 30.0,
     ):
         """Initialize the service client.
@@ -37,11 +37,9 @@ class ServiceClient:
         from app.config import get_settings
 
         settings = get_settings()
-        self.base_url = base_url or getattr(
-            settings, "service_gateway_url", "http://localhost:8001"
-        )
+        self.base_url = base_url or getattr(settings, "service_gateway_url", "http://localhost:8001")
         self.timeout = timeout
-        self._client: Optional[httpx.AsyncClient] = None
+        self._client: httpx.AsyncClient | None = None
 
     async def _get_client(self) -> httpx.AsyncClient:
         """Get or create the async HTTP client."""
@@ -100,9 +98,9 @@ class ServiceClient:
         self,
         method: str,
         endpoint: str,
-        params: Optional[Dict] = None,
-        json_body: Optional[Dict] = None,
-        user_id: Optional[str] = None,
+        params: dict | None = None,
+        json_body: dict | None = None,
+        user_id: str | None = None,
         language: str = "es",
     ) -> ServiceResult:
         """Make a service call.
@@ -222,7 +220,7 @@ class ServiceClient:
 
 
 # Singleton instance
-_service_client: Optional[ServiceClient] = None
+_service_client: ServiceClient | None = None
 
 
 def get_service_client() -> ServiceClient:

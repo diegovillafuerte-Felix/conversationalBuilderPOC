@@ -1,8 +1,9 @@
 """Authentication and authorization for the Felix Orchestrator API."""
 
 import logging
+
 from fastapi import HTTPException, Security, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.config import get_settings
 
@@ -13,9 +14,7 @@ settings = get_settings()
 security = HTTPBearer()
 
 
-async def verify_admin_token(
-    credentials: HTTPAuthorizationCredentials = Security(security)
-) -> str:
+async def verify_admin_token(credentials: HTTPAuthorizationCredentials = Security(security)) -> str:
     """
     Verify admin API token for protected endpoints.
 
@@ -43,24 +42,19 @@ async def verify_admin_token(
             # In production, fail hard
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Admin authentication not configured - set ADMIN_API_TOKEN"
+                detail="Admin authentication not configured - set ADMIN_API_TOKEN",
             )
 
     # Verify token matches configured admin token
     if token != settings.admin_api_token:
-        logger.warning(f"Invalid admin token attempt")
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Invalid or missing admin token"
-        )
+        logger.warning("Invalid admin token attempt")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid or missing admin token")
 
     return token
 
 
 # Optional: Add a dependency that allows bypassing auth in debug mode for development
-async def verify_admin_token_optional(
-    credentials: HTTPAuthorizationCredentials = Security(security)
-) -> str:
+async def verify_admin_token_optional(credentials: HTTPAuthorizationCredentials = Security(security)) -> str:
     """
     Verify admin token but allow bypass in debug mode.
 

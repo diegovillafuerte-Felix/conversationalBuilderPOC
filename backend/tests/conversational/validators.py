@@ -1,9 +1,8 @@
 """Validators for checking expected behaviors in responses."""
 
 import re
-from typing import Dict, Any, List
 
-from .schemas import ExpectedBehavior, BehaviorResult
+from .schemas import BehaviorResult, ExpectedBehavior
 
 
 class ResponseValidator:
@@ -13,7 +12,7 @@ class ResponseValidator:
         self,
         behavior: ExpectedBehavior,
         response_text: str,
-        tool_calls: List[str],
+        tool_calls: list[str],
         flow_state: str = None,
     ) -> BehaviorResult:
         """Validate a single expected behavior."""
@@ -40,7 +39,7 @@ class ResponseValidator:
         self,
         behavior: ExpectedBehavior,
         response_text: str,
-        tool_calls: List[str],
+        tool_calls: list[str],
         flow_state: str,
     ) -> BehaviorResult:
         """Validate that a specific tool was called."""
@@ -66,7 +65,7 @@ class ResponseValidator:
         self,
         behavior: ExpectedBehavior,
         response_text: str,
-        tool_calls: List[str],
+        tool_calls: list[str],
         flow_state: str,
     ) -> BehaviorResult:
         """Validate that response contains ALL specified texts."""
@@ -93,7 +92,7 @@ class ResponseValidator:
         self,
         behavior: ExpectedBehavior,
         response_text: str,
-        tool_calls: List[str],
+        tool_calls: list[str],
         flow_state: str,
     ) -> BehaviorResult:
         """Validate that response contains ANY of the specified texts."""
@@ -120,7 +119,7 @@ class ResponseValidator:
         self,
         behavior: ExpectedBehavior,
         response_text: str,
-        tool_calls: List[str],
+        tool_calls: list[str],
         flow_state: str,
     ) -> BehaviorResult:
         """Validate that response does NOT contain specified texts."""
@@ -147,7 +146,7 @@ class ResponseValidator:
         self,
         behavior: ExpectedBehavior,
         response_text: str,
-        tool_calls: List[str],
+        tool_calls: list[str],
         flow_state: str,
     ) -> BehaviorResult:
         """Validate that response matches a regex pattern."""
@@ -177,7 +176,7 @@ class ResponseValidator:
         self,
         behavior: ExpectedBehavior,
         response_text: str,
-        tool_calls: List[str],
+        tool_calls: list[str],
         flow_state: str,
     ) -> BehaviorResult:
         """Validate the current flow state."""
@@ -188,9 +187,7 @@ class ResponseValidator:
         return BehaviorResult(
             behavior_type="flow_state",
             passed=passed,
-            message=f"Flow state: {flow_state}" + (
-                "" if passed else f", expected: {expected_state}"
-            ),
+            message=f"Flow state: {flow_state}" + ("" if passed else f", expected: {expected_state}"),
             expected=expected_state,
             actual=flow_state,
         )

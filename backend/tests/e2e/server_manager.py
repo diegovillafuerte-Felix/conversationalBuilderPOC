@@ -4,12 +4,13 @@ Checks if backend and services gateway are running, starts them if not,
 and provides cleanup on exit.
 """
 
-import subprocess
-import time
-import sys
+import contextlib
+import logging
 import os
 import signal
-import logging
+import subprocess
+import sys
+import time
 from pathlib import Path
 
 import httpx
@@ -108,11 +109,7 @@ class ServerManager:
         if not services_ok:
             return False
 
-        backend_ok = self.start_backend()
-        if not backend_ok:
-            return False
-
-        return True
+        return self.start_backend()
 
     def stop(self):
         """Stop any servers we started (not externally-managed ones)."""
@@ -123,10 +120,8 @@ class ServerManager:
                     os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
                     proc.wait(timeout=5)
                 except (ProcessLookupError, subprocess.TimeoutExpired):
-                    try:
+                    with contextlib.suppress(ProcessLookupError):
                         os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                    except ProcessLookupError:
-                        pass
         self._backend_proc = None
         self._services_proc = None
 

@@ -1,18 +1,14 @@
 """Financial Data service API router."""
 
-from typing import Optional
-
 from fastapi import APIRouter, Header
-from pydantic import BaseModel
 
-from app.services.financial_data import FinancialDataService
 from app.schemas.common import ServiceResponse
-
+from app.services.financial_data import FinancialDataService
 
 router = APIRouter(prefix="/financial-data", tags=["financial-data"])
 
 # Singleton service instance
-_service: Optional[FinancialDataService] = None
+_service: FinancialDataService | None = None
 
 
 def get_service() -> FinancialDataService:
@@ -44,7 +40,7 @@ async def get_user_financial_summary(
 async def get_rate_trends(
     corridor: str = "USD_MXN",
     days: int = 30,
-    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_user_id: str | None = Header(None, alias="X-User-Id"),
     accept_language: str = Header("es", alias="Accept-Language"),
 ) -> ServiceResponse:
     """Get exchange rate trends for a corridor."""

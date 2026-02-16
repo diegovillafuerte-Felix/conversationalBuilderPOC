@@ -1,39 +1,38 @@
 """Main orchestrator for handling conversation flow."""
 
-import asyncio
 import json
 import logging
 import re
 import time
-from typing import Optional, List, Any
-from uuid import UUID
 from dataclasses import dataclass, field
+from typing import Any
+from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.session import ConversationSession
-from app.models.user import UserContext
-from app.models.conversation import ConversationMessage
-from app.core.llm_client import LLMClient, LLMResponse, ToolCall, get_llm_client
-from app.core.context_assembler import ContextAssembler, AssembledContext, get_context_assembler
-from app.core.config_types import PromptMode
-from app.core.state_manager import StateManager
-from app.core.tool_executor import ToolExecutor, ToolResult, get_tool_executor
-from app.core.template_renderer import TemplateRenderer, get_template_renderer
-from app.core.routing import RoutingType, RoutingOutcome
-from app.core.routing_handler import RoutingHandler
 from app.core.agent_registry import get_agent_registry
 from app.core.config_types import (
     AgentConfig,
-    ToolConfig,
+    PromptMode,
     SubflowConfig,
     SubflowStateConfig,
+    ToolConfig,
     TransitionTrigger,
 )  # PromptMode imported above
-from app.core.history_compactor import HistoryCompactor
-from app.core.event_trace import EventTracer, EventCategory, EventLevel
+from app.core.context_assembler import AssembledContext, ContextAssembler, get_context_assembler
 from app.core.context_enrichment import evaluate_condition
+from app.core.event_trace import EventCategory, EventLevel, EventTracer
+from app.core.history_compactor import HistoryCompactor
+from app.core.llm_client import LLMClient, LLMResponse, ToolCall, get_llm_client
+from app.core.routing import RoutingOutcome
+from app.core.routing_handler import RoutingHandler
+from app.core.state_manager import StateManager
+from app.core.template_renderer import TemplateRenderer, get_template_renderer
+from app.core.tool_executor import ToolExecutor, ToolResult, get_tool_executor
+from app.models.conversation import ConversationMessage
+from app.models.session import ConversationSession
+from app.models.user import UserContext
 
 logger = logging.getLogger(__name__)
 MAX_CHAIN_STEPS = 4
@@ -42,27 +41,29 @@ MAX_CHAIN_STEPS = 4
 @dataclass
 class DebugLLMCall:
     """Debug information about an LLM call."""
+
     system_prompt: str
-    messages: List[dict]
-    tools_provided: List[str]
+    messages: list[dict]
+    tools_provided: list[str]
     model: str
     temperature: float
-    raw_response: Optional[str] = None
-    token_counts: Optional[dict] = None
+    raw_response: str | None = None
+    token_counts: dict | None = None
 
 
 @dataclass
 class DebugInfo:
     """Debug information for developer view."""
-    llm_call: Optional[DebugLLMCall] = None
-    agent_stack: List[dict] = field(default_factory=list)
-    flow_info: Optional[dict] = None
-    context_sections: Optional[dict] = None
-    processing_time_ms: Optional[int] = None
-    routing_path: List[dict] = field(default_factory=list)
+
+    llm_call: DebugLLMCall | None = None
+    agent_stack: list[dict] = field(default_factory=list)
+    flow_info: dict | None = None
+    context_sections: dict | None = None
+    processing_time_ms: int | None = None
+    routing_path: list[dict] = field(default_factory=list)
     chain_iterations: int = 0
     stable_state_reached: bool = False
-    event_trace: List[dict] = field(default_factory=list)
+    event_trace: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -73,24 +74,25 @@ class OrchestratorResponse:
     message: str
     agent_id: str
     agent_name: str
-    tool_calls: List[dict]
-    pending_confirmation: Optional[dict] = None
-    flow_state: Optional[str] = None
+    tool_calls: list[dict]
+    pending_confirmation: dict | None = None
+    flow_state: str | None = None
     escalated: bool = False
-    debug: Optional[DebugInfo] = None
+    debug: DebugInfo | None = None
 
 
 @dataclass
 class ChainState:
     """Tracks state during routing chain execution."""
+
     iteration: int = 0
     routing_occurred: bool = False
     stable_state_reached: bool = False
     confirmation_pending: bool = False
-    error: Optional[str] = None
-    routing_path: List[dict] = field(default_factory=list)
-    last_llm_response: Optional[LLMResponse] = None
-    last_tool_calls: List[dict] = field(default_factory=list)
+    error: str | None = None
+    routing_path: list[dict] = field(default_factory=list)
+    last_llm_response: LLMResponse | None = None
+    last_tool_calls: list[dict] = field(default_factory=list)
 
 
 class Orchestrator:
@@ -99,10 +101,10 @@ class Orchestrator:
     def __init__(
         self,
         db: AsyncSession,
-        llm_client: Optional[LLMClient] = None,
-        context_assembler: Optional[ContextAssembler] = None,
-        tool_executor: Optional[ToolExecutor] = None,
-        template_renderer: Optional[TemplateRenderer] = None,
+        llm_client: LLMClient | None = None,
+        context_assembler: ContextAssembler | None = None,
+        tool_executor: ToolExecutor | None = None,
+        template_renderer: TemplateRenderer | None = None,
     ):
         self.db = db
         self.llm_client = llm_client or get_llm_client()
@@ -110,13 +112,13 @@ class Orchestrator:
         self.tool_executor = tool_executor or get_tool_executor()
         self.template_renderer = template_renderer or get_template_renderer()
         self.state_manager = StateManager(db)
-        self.routing_handler: Optional[RoutingHandler] = None
+        self.routing_handler: RoutingHandler | None = None
 
     async def handle_message(
         self,
         user_message: str,
         user_id: str,
-        session_id: Optional[UUID] = None,
+        session_id: UUID | None = None,
     ) -> OrchestratorResponse:
         """
         Handle a user message with routing chain flow.
@@ -149,13 +151,12 @@ class Orchestrator:
             tracer.error("no_root_agent", "No root agent configured")
             raise ValueError("No root agent configured")
 
-        session = await self.state_manager.get_or_create_session(
-            session_id, user_id, root_agent.config_id
-        )
+        session = await self.state_manager.get_or_create_session(session_id, user_id, root_agent.config_id)
         tracer.trace(
-            EventCategory.SESSION, "session_loaded",
+            EventCategory.SESSION,
+            "session_loaded",
             f"Session {session.session_id} for user {user_id}",
-            data={"session_id": str(session.session_id), "user_id": user_id, "new": session_id is None}
+            data={"session_id": str(session.session_id), "user_id": user_id, "new": session_id is None},
         )
 
         # Check for pending confirmation
@@ -175,9 +176,10 @@ class Orchestrator:
             ]
 
         tracer.trace(
-            EventCategory.AGENT, "agent_active",
+            EventCategory.AGENT,
+            "agent_active",
             f"Current agent: {agent.name}",
-            data={"agent_id": agent.config_id, "agent_name": agent.name, "stack_depth": len(session.agent_stack or [])}
+            data={"agent_id": agent.config_id, "agent_name": agent.name, "stack_depth": len(session.agent_stack or [])},
         )
 
         # Get user context and set language
@@ -201,8 +203,6 @@ class Orchestrator:
         response_text = None
         debug_llm_call = None
         all_tool_calls = []
-        routing_occurred_previously = False  # Track if routing occurred in any previous iteration
-
         while True:
             chain_state.iteration += 1
 
@@ -229,9 +229,10 @@ class Orchestrator:
             chain_state.routing_occurred = False  # Reset for this iteration
 
             tracer.trace(
-                EventCategory.ROUTING, "chain_iteration_start",
+                EventCategory.ROUTING,
+                "chain_iteration_start",
                 f"Chain iteration {chain_state.iteration}",
-                data={"iteration": chain_state.iteration, "prompt_mode": prompt_mode.value}
+                data={"iteration": chain_state.iteration, "prompt_mode": prompt_mode.value},
             )
 
             # Get current agent (may have changed from previous iteration)
@@ -251,7 +252,6 @@ class Orchestrator:
             )
             if pre_llm_transition is not None:
                 chain_state.routing_occurred = True
-                routing_occurred_previously = True
                 await self.db.commit()
                 await self.db.refresh(session)
 
@@ -283,7 +283,8 @@ class Orchestrator:
             # Call LLM
             llm_start = time.time()
             llm_id = tracer.trace(
-                EventCategory.LLM, "llm_request",
+                EventCategory.LLM,
+                "llm_request",
                 f"Calling {context.model} with {len(context.tools) if context.tools else 0} tools",
                 data={
                     "model": context.model,
@@ -292,8 +293,8 @@ class Orchestrator:
                     "temperature": context.temperature,
                     "system_prompt": context.system_prompt,
                     "messages": context.messages,
-                    "tools": context.tools if context.tools else []
-                }
+                    "tools": context.tools if context.tools else [],
+                },
             )
             llm_response = await self.llm_client.complete(
                 system_prompt=context.system_prompt,
@@ -307,20 +308,20 @@ class Orchestrator:
             chain_state.last_llm_response = llm_response
 
             tracer.trace(
-                EventCategory.LLM, "llm_response",
+                EventCategory.LLM,
+                "llm_response",
                 f"Response: {len(llm_response.tool_calls)} tool calls, {llm_response.output_tokens} tokens",
                 duration_ms=llm_duration,
                 parent_id=llm_id,
                 data={
                     "text": llm_response.text,
                     "tool_calls": [
-                        {"id": tc.id, "name": tc.name, "parameters": tc.parameters}
-                        for tc in llm_response.tool_calls
+                        {"id": tc.id, "name": tc.name, "parameters": tc.parameters} for tc in llm_response.tool_calls
                     ],
                     "input_tokens": llm_response.input_tokens,
                     "output_tokens": llm_response.output_tokens,
-                    "stop_reason": llm_response.stop_reason
-                }
+                    "stop_reason": llm_response.stop_reason,
+                },
             )
 
             # Capture debug info from last LLM call
@@ -335,18 +336,17 @@ class Orchestrator:
             )
 
             # Process tools, detect routing
-            response_text = await self._process_chain_tools(
-                session, agent, llm_response, chain_state, context, tracer
-            )
+            response_text = await self._process_chain_tools(session, agent, llm_response, chain_state, context, tracer)
             all_tool_calls.extend(chain_state.last_tool_calls)
 
             # Exit conditions
             if chain_state.error:
                 tracer.trace(
-                    EventCategory.ERROR, "chain_error",
+                    EventCategory.ERROR,
+                    "chain_error",
                     f"Chain error: {chain_state.error}",
                     level=EventLevel.ERROR,
-                    data={"iteration": chain_state.iteration, "error": chain_state.error}
+                    data={"iteration": chain_state.iteration, "error": chain_state.error},
                 )
                 logger.error(f"Chain error at iteration {chain_state.iteration}: {chain_state.error}")
                 response_text = "Lo siento, encontré un problema. ¿En qué más puedo ayudarte?"
@@ -354,9 +354,10 @@ class Orchestrator:
 
             if chain_state.confirmation_pending:
                 tracer.trace(
-                    EventCategory.TOOL, "confirmation_pending",
+                    EventCategory.TOOL,
+                    "confirmation_pending",
                     "Waiting for user confirmation",
-                    data={"iteration": chain_state.iteration}
+                    data={"iteration": chain_state.iteration},
                 )
                 logger.info(f"Chain paused for confirmation at iteration {chain_state.iteration}")
                 break
@@ -364,22 +365,21 @@ class Orchestrator:
             if not chain_state.routing_occurred:
                 chain_state.stable_state_reached = True
                 tracer.trace(
-                    EventCategory.ROUTING, "stable_state_reached",
+                    EventCategory.ROUTING,
+                    "stable_state_reached",
                     f"Chain stable after {chain_state.iteration} iterations",
-                    data={"iteration": chain_state.iteration}
+                    data={"iteration": chain_state.iteration},
                 )
                 logger.info(f"Chain reached stable state at iteration {chain_state.iteration}")
                 break
 
-            # Track that routing occurred (for ROUTING mode in next iteration)
-            routing_occurred_previously = True
-
             if self._detect_chain_loop(chain_state):
                 tracer.trace(
-                    EventCategory.ERROR, "chain_loop_detected",
+                    EventCategory.ERROR,
+                    "chain_loop_detected",
                     "Routing chain loop detected",
                     level=EventLevel.ERROR,
-                    data={"iteration": chain_state.iteration, "path": chain_state.routing_path}
+                    data={"iteration": chain_state.iteration, "path": chain_state.routing_path},
                 )
                 logger.error(f"Chain loop detected at iteration {chain_state.iteration}")
                 response_text = "Parece que estamos en un bucle. ¿Podrías reformular tu solicitud?"
@@ -399,10 +399,11 @@ class Orchestrator:
 
         # Add final trace event
         tracer.trace(
-            EventCategory.SESSION, "response_ready",
+            EventCategory.SESSION,
+            "response_ready",
             f"Response ready after {processing_time_ms}ms",
             duration_ms=processing_time_ms,
-            data={"iterations": chain_state.iteration, "stable": chain_state.stable_state_reached}
+            data={"iterations": chain_state.iteration, "stable": chain_state.stable_state_reached},
         )
 
         # Record messages with complete event trace payload
@@ -470,9 +471,7 @@ class Orchestrator:
             tool = self._get_tool_by_name(agent, pending["toolName"])
 
             if tool:
-                result = await self.tool_executor.execute(
-                    tool, pending["toolParams"], session, skip_confirmation=True
-                )
+                result = await self.tool_executor.execute(tool, pending["toolParams"], session, skip_confirmation=True)
 
                 # Clear confirmation
                 await self.state_manager.clear_pending_confirmation(session)
@@ -486,9 +485,7 @@ class Orchestrator:
 
                     # Handle flow transition if applicable
                     if session.current_flow and tool.flow_transition:
-                        transition_result = await self._handle_flow_transition(
-                            session, agent, tool, result
-                        )
+                        transition_result = await self._handle_flow_transition(session, agent, tool, result)
                         if transition_result:
                             response_text = transition_result
                 else:
@@ -511,7 +508,9 @@ class Orchestrator:
 
         else:
             # Unclear response, ask again
-            response_text = f"No entendí tu respuesta. {session.pending_confirmation['displayMessage']}\n\n¿Confirmas? (Sí/No)"
+            response_text = (
+                f"No entendí tu respuesta. {session.pending_confirmation['displayMessage']}\n\n¿Confirmas? (Sí/No)"
+            )
 
         # Record the exchange
         await self._record_messages(session, user_message, response_text, [], agent)
@@ -534,7 +533,7 @@ class Orchestrator:
         agent: AgentConfig,
         tool: ToolConfig,
         result: ToolResult,
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         Handle flow state transition after tool execution.
 
@@ -556,9 +555,7 @@ class Orchestrator:
 
         # Get the target state definition
         target_state = self.state_manager.get_flow_state(
-            session.current_flow["agentId"],
-            session.current_flow["flowId"],
-            target_state_id
+            session.current_flow["agentId"], session.current_flow["flowId"], target_state_id
         )
 
         if not target_state:
@@ -585,10 +582,10 @@ class Orchestrator:
         agent: AgentConfig,
         transition_trigger: str,
         tracer: EventTracer,
-        tool_name: Optional[str] = None,
-        tool_result: Optional[dict] = None,
-        user_message: Optional[str] = None,
-    ) -> Optional[str]:
+        tool_name: str | None = None,
+        tool_result: dict | None = None,
+        user_message: str | None = None,
+    ) -> str | None:
         """
         Evaluate declarative transitions for the current state.
 
@@ -723,14 +720,12 @@ class Orchestrator:
                     "target_state": target_state_id,
                     "from_state": session.current_flow.get("currentState"),
                     "to_state": target_state_id,
-                }
+                },
             )
 
             # Get the target state definition
             target_state = self.state_manager.get_flow_state(
-                session.current_flow["agentId"],
-                session.current_flow["flowId"],
-                target_state_id
+                session.current_flow["agentId"], session.current_flow["flowId"], target_state_id
             )
 
             if not target_state:
@@ -754,7 +749,7 @@ class Orchestrator:
         # No transition matched
         return None
 
-    def _get_current_flow_state(self, session: ConversationSession) -> Optional[SubflowStateConfig]:
+    def _get_current_flow_state(self, session: ConversationSession) -> SubflowStateConfig | None:
         """Get the current flow state configuration."""
         if not session.current_flow:
             return None
@@ -772,7 +767,7 @@ class Orchestrator:
         self,
         user_message: str,
         state_data: dict,
-        transitions: List[dict],
+        transitions: list[dict],
     ) -> dict:
         """Extract deterministic values from user input for condition evaluation."""
         extracted: dict[str, Any] = {}
@@ -816,7 +811,7 @@ class Orchestrator:
         return extracted
 
     @staticmethod
-    def _collect_transition_variables(transitions: List[dict]) -> set[str]:
+    def _collect_transition_variables(transitions: list[dict]) -> set[str]:
         """Collect variable names used in conditions."""
         variables: set[str] = set()
         token_pattern = re.compile(r"[A-Za-z_][A-Za-z0-9_\.]*")
@@ -848,7 +843,7 @@ class Orchestrator:
         return variables
 
     @staticmethod
-    def _extract_first_number(user_message: str) -> Optional[float]:
+    def _extract_first_number(user_message: str) -> float | None:
         """Extract first numeric token from user text."""
         normalized = user_message.replace(",", "")
         match = re.search(r"\d+(?:\.\d+)?", normalized)
@@ -948,7 +943,7 @@ class Orchestrator:
         state: SubflowStateConfig,
         session: ConversationSession,
         agent: AgentConfig,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Handle on_enter actions when entering a state."""
         if not state.on_enter:
             return None
@@ -985,10 +980,7 @@ class Orchestrator:
         for entry in chain_state.routing_path:
             key = (entry.get("from_agent"), entry.get("tool"))
             if key in visited:
-                logger.warning(
-                    f"Chain loop detected: {key} visited twice. "
-                    f"Path: {chain_state.routing_path}"
-                )
+                logger.warning(f"Chain loop detected: {key} visited twice. Path: {chain_state.routing_path}")
                 return True
             visited.add(key)
         return False
@@ -1001,7 +993,7 @@ class Orchestrator:
         chain_state: ChainState,
         context: AssembledContext,
         tracer: EventTracer,
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         Process tool calls within a routing chain iteration.
 
@@ -1025,19 +1017,22 @@ class Orchestrator:
         for tool_call in llm_response.tool_calls:
             tool_start = time.time()
             tool_id = tracer.trace(
-                EventCategory.TOOL, "tool_started",
+                EventCategory.TOOL,
+                "tool_started",
                 f"Executing: {tool_call.name}",
-                data={"tool_name": tool_call.name, "params": tool_call.parameters}
+                data={"tool_name": tool_call.name, "params": tool_call.parameters},
             )
 
             result = await self._process_tool_call(session, agent, tool_call)
             tool_duration = int((time.time() - tool_start) * 1000)
 
-            chain_state.last_tool_calls.append({
-                "name": tool_call.name,
-                "params": tool_call.parameters,
-                "result": result.data if result else None,
-            })
+            chain_state.last_tool_calls.append(
+                {
+                    "name": tool_call.name,
+                    "params": tool_call.parameters,
+                    "result": result.data if result else None,
+                }
+            )
 
             # Check for routing outcome
             if result and result.data and isinstance(result.data, dict):
@@ -1047,44 +1042,52 @@ class Orchestrator:
 
                     # Trace routing classification
                     tracer.trace(
-                        EventCategory.ROUTING, "tool_classified",
+                        EventCategory.ROUTING,
+                        "tool_classified",
                         f"Tool {tool_call.name} is ROUTING type",
                         parent_id=tool_id,
                         data={
-                            "routing_type": routing_outcome.routing_type if hasattr(routing_outcome, 'routing_type') else "routing",
+                            "routing_type": routing_outcome.routing_type
+                            if hasattr(routing_outcome, "routing_type")
+                            else "routing",
                             "state_changed": routing_outcome.state_changed,
-                            "target": routing_outcome.target_id if hasattr(routing_outcome, 'target_id') else None
-                        }
+                            "target": routing_outcome.target_id if hasattr(routing_outcome, "target_id") else None,
+                        },
                     )
 
                     # Track routing path for loop detection
                     from datetime import datetime
-                    chain_state.routing_path.append({
-                        "iteration": chain_state.iteration,
-                        "from_agent": agent.config_id,
-                        "tool": tool_call.name,
-                        "state_changed": routing_outcome.state_changed,
-                        "timestamp": datetime.utcnow().isoformat()
-                    })
+
+                    chain_state.routing_path.append(
+                        {
+                            "iteration": chain_state.iteration,
+                            "from_agent": agent.config_id,
+                            "tool": tool_call.name,
+                            "state_changed": routing_outcome.state_changed,
+                            "timestamp": datetime.utcnow().isoformat(),
+                        }
+                    )
 
                     if routing_outcome.error:
                         tracer.trace(
-                            EventCategory.ROUTING, "routing_error",
+                            EventCategory.ROUTING,
+                            "routing_error",
                             f"Routing failed: {routing_outcome.error}",
                             level=EventLevel.ERROR,
                             parent_id=tool_id,
-                            data={"error": routing_outcome.error}
+                            data={"error": routing_outcome.error},
                         )
                         chain_state.error = routing_outcome.error
                         return None
 
                     if routing_outcome.state_changed:
                         tracer.trace(
-                            EventCategory.ROUTING, "routing_executed",
+                            EventCategory.ROUTING,
+                            "routing_executed",
                             f"State changed by {tool_call.name}",
                             duration_ms=tool_duration,
                             parent_id=tool_id,
-                            data={"state_changed": True}
+                            data={"state_changed": True},
                         )
                         chain_state.routing_occurred = True
                         await self.db.commit()
@@ -1116,9 +1119,7 @@ class Orchestrator:
             if result and session.current_flow:
                 tool = self._get_tool_by_name(agent, tool_call.name)
                 if tool and tool.flow_transition:
-                    transition_result = await self._handle_flow_transition(
-                        session, agent, tool, result
-                    )
+                    transition_result = await self._handle_flow_transition(session, agent, tool, result)
                     if transition_result:
                         return transition_result
 
@@ -1148,15 +1149,17 @@ class Orchestrator:
 
             # This is a service tool - track it for feedback loop
             tracer.trace(
-                EventCategory.TOOL, "tool_classified",
+                EventCategory.TOOL,
+                "tool_classified",
                 f"Tool {tool_call.name} is SERVICE type",
                 parent_id=tool_id,
-                data={"routing_type": "SERVICE"}
+                data={"routing_type": "SERVICE"},
             )
 
             # Log tool completion with full result data
             tracer.trace(
-                EventCategory.TOOL, "tool_complete",
+                EventCategory.TOOL,
+                "tool_complete",
                 f"{tool_call.name}: {'success' if result and result.success else 'failed'}",
                 level=EventLevel.INFO if result and result.success else EventLevel.ERROR,
                 duration_ms=tool_duration,
@@ -1164,17 +1167,19 @@ class Orchestrator:
                 data={
                     "success": result.success if result else False,
                     "result_data": result.data if result else None,
-                    "error": result.error if result and not result.success else None
-                }
+                    "error": result.error if result and not result.success else None,
+                },
             )
 
             service_tool_calls.append(tool_call)
-            service_tool_results.append({
-                "tool_call_id": tool_call.id,
-                "content": result.data if result and result.success else {
-                    "error": result.error if result else "Unknown error"
+            service_tool_results.append(
+                {
+                    "tool_call_id": tool_call.id,
+                    "content": result.data
+                    if result and result.success
+                    else {"error": result.error if result else "Unknown error"},
                 }
-            })
+            )
 
         # If we have service tool results and no routing occurred, feed results back to LLM
         if service_tool_calls and service_tool_results and not chain_state.routing_occurred:
@@ -1182,37 +1187,37 @@ class Orchestrator:
 
             # Build messages including the assistant message with tool calls
             messages_with_tool_calls = context.messages.copy()
-            messages_with_tool_calls.append({
-                "role": "assistant",
-                "content": llm_response.text or "",
-                "tool_calls": [
-                    {
-                        "id": tc.id,
-                        "type": "function",
-                        "function": {
-                            "name": tc.name,
-                            "arguments": json.dumps(tc.parameters)
+            messages_with_tool_calls.append(
+                {
+                    "role": "assistant",
+                    "content": llm_response.text or "",
+                    "tool_calls": [
+                        {
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {"name": tc.name, "arguments": json.dumps(tc.parameters)},
                         }
-                    }
-                    for tc in service_tool_calls
-                ]
-            })
+                        for tc in service_tool_calls
+                    ],
+                }
+            )
 
             tracer.trace(
-                EventCategory.LLM, "tool_feedback_started",
+                EventCategory.LLM,
+                "tool_feedback_started",
                 f"Feeding {len(service_tool_results)} results back to LLM",
                 data={
                     "tool_count": len(service_tool_results),
                     "tool_results": service_tool_results,
                     "messages_with_tool_calls": messages_with_tool_calls,
-                    "system_prompt": context.system_prompt
-                }
+                    "system_prompt": context.system_prompt,
+                },
             )
 
             try:
                 # Iterative tool feedback loop: execute tool calls, feed results back,
-                # repeat until the LLM returns text (up to MAX_FEEDBACK_ROUNDS).
-                MAX_FEEDBACK_ROUNDS = 3
+                # repeat until the LLM returns text (up to max_feedback_rounds).
+                max_feedback_rounds = 3
                 current_messages = messages_with_tool_calls
                 current_tool_results = service_tool_results
 
@@ -1220,17 +1225,18 @@ class Orchestrator:
                 # In the feedback loop, the LLM should only use service tools
                 # (for follow-up data fetching) or generate text. Routing tools
                 # like go_home cause empty responses when called here.
-                ROUTING_TOOL_NAMES = {"go_home", "up_one_level", "escalate_to_human"}
+                routing_tool_names = {"go_home", "up_one_level", "escalate_to_human"}
                 all_tools = context.tools if context.tools else []
                 current_tools = [
-                    t for t in all_tools
-                    if t.get("function", {}).get("name", "") not in ROUTING_TOOL_NAMES
+                    t
+                    for t in all_tools
+                    if t.get("function", {}).get("name", "") not in routing_tool_names
                     and not t.get("function", {}).get("name", "").startswith("enter_")
                     and not t.get("function", {}).get("name", "").startswith("start_flow_")
                 ]
 
-                for feedback_round in range(MAX_FEEDBACK_ROUNDS):
-                    is_last_round = (feedback_round == MAX_FEEDBACK_ROUNDS - 1)
+                for feedback_round in range(max_feedback_rounds):
+                    is_last_round = feedback_round == max_feedback_rounds - 1
                     feedback_start = time.time()
 
                     round_response = await self.llm_client.complete_with_tool_results(
@@ -1244,44 +1250,55 @@ class Orchestrator:
                     # If LLM returned text (no more tool calls), we're done
                     if not round_response.tool_calls or is_last_round:
                         tracer.trace(
-                            EventCategory.LLM, "tool_feedback_complete",
+                            EventCategory.LLM,
+                            "tool_feedback_complete",
                             f"Feedback round {feedback_round + 1}: text response",
                             duration_ms=feedback_duration,
                             data={
                                 "text": round_response.text,
                                 "round": feedback_round + 1,
                                 "output_tokens": round_response.output_tokens,
-                            }
+                            },
                         )
                         chain_state.last_llm_response = round_response
                         return round_response.text
 
                     # LLM made more tool calls — execute them
                     tracer.trace(
-                        EventCategory.LLM, "tool_feedback_followup",
+                        EventCategory.LLM,
+                        "tool_feedback_followup",
                         f"Feedback round {feedback_round + 1}: {len(round_response.tool_calls)} tool calls",
                         duration_ms=feedback_duration,
-                        data={"tool_calls": [tc.name for tc in round_response.tool_calls]}
+                        data={"tool_calls": [tc.name for tc in round_response.tool_calls]},
                     )
 
                     next_tool_calls = []
                     next_tool_results = []
                     for tc in round_response.tool_calls:
                         result = await self._process_tool_call(session, agent, tc)
-                        chain_state.last_tool_calls.append({
-                            "name": tc.name,
-                            "params": tc.parameters,
-                            "result": result.data if result else None,
-                        })
-                        if result and result.data and isinstance(result.data, dict) and result.data.get("_routing_outcome"):
+                        chain_state.last_tool_calls.append(
+                            {
+                                "name": tc.name,
+                                "params": tc.parameters,
+                                "result": result.data if result else None,
+                            }
+                        )
+                        if (
+                            result
+                            and result.data
+                            and isinstance(result.data, dict)
+                            and result.data.get("_routing_outcome")
+                        ):
                             continue
                         next_tool_calls.append(tc)
-                        next_tool_results.append({
-                            "tool_call_id": tc.id,
-                            "content": result.data if result and result.success else {
-                                "error": result.error if result else "Unknown error"
+                        next_tool_results.append(
+                            {
+                                "tool_call_id": tc.id,
+                                "content": result.data
+                                if result and result.success
+                                else {"error": result.error if result else "Unknown error"},
                             }
-                        })
+                        )
 
                     if not next_tool_calls:
                         chain_state.last_llm_response = round_response
@@ -1290,23 +1307,36 @@ class Orchestrator:
                     # Build messages for next round
                     next_messages = current_messages.copy()
                     for tr in current_tool_results:
-                        next_messages.append({"role": "tool", "tool_call_id": tr["tool_call_id"], "content": json.dumps(tr["content"], default=str)})
-                    next_messages.append({
-                        "role": "assistant",
-                        "content": round_response.text or "",
-                        "tool_calls": [
-                            {"id": tc.id, "type": "function", "function": {"name": tc.name, "arguments": json.dumps(tc.parameters)}}
-                            for tc in next_tool_calls
-                        ]
-                    })
+                        next_messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tr["tool_call_id"],
+                                "content": json.dumps(tr["content"], default=str),
+                            }
+                        )
+                    next_messages.append(
+                        {
+                            "role": "assistant",
+                            "content": round_response.text or "",
+                            "tool_calls": [
+                                {
+                                    "id": tc.id,
+                                    "type": "function",
+                                    "function": {"name": tc.name, "arguments": json.dumps(tc.parameters)},
+                                }
+                                for tc in next_tool_calls
+                            ],
+                        }
+                    )
                     current_messages = next_messages
                     current_tool_results = next_tool_results
             except Exception as e:
                 tracer.trace(
-                    EventCategory.ERROR, "tool_feedback_failed",
-                    f"Feedback failed: {str(e)}",
+                    EventCategory.ERROR,
+                    "tool_feedback_failed",
+                    f"Feedback failed: {e!s}",
                     level=EventLevel.ERROR,
-                    data={"error": str(e)}
+                    data={"error": str(e)},
                 )
                 logger.error(f"Tool result feedback failed: {e}")
                 # Fall back to original response
@@ -1316,7 +1346,7 @@ class Orchestrator:
 
     async def _process_tool_call(
         self, session: ConversationSession, agent: AgentConfig, tool_call: ToolCall
-    ) -> Optional[ToolResult]:
+    ) -> ToolResult | None:
         """Process a single tool call."""
         tool_name = tool_call.name
 
@@ -1344,44 +1374,31 @@ class Orchestrator:
 
         # Try routing first (handles navigation, agent entry, flow start)
         routing_handler = self._ensure_routing_handler()
-        routing_outcome = await routing_handler.handle_tool_routing(
-            tool_name, tool_call.parameters, session, agent
-        )
+        routing_outcome = await routing_handler.handle_tool_routing(tool_name, tool_call.parameters, session, agent)
 
         if routing_outcome.handled:
             # Return a special result that signals the orchestrator
             if routing_outcome.error:
                 logger.error(f"Routing error for {tool_name}: {routing_outcome.error}")
-                return ToolResult(
-                    success=False,
-                    data=None,
-                    error=f"Routing failed: {routing_outcome.error}"
-                )
-            return ToolResult(
-                success=True,
-                data={"_routing_outcome": routing_outcome.to_dict()}
-            )
+                return ToolResult(success=False, data=None, error=f"Routing failed: {routing_outcome.error}")
+            return ToolResult(success=True, data={"_routing_outcome": routing_outcome.to_dict()})
 
         # Not a routing tool - find and execute the tool definition
         tool = self._get_tool_by_name(agent, tool_name)
 
         if tool:
-            return await self.tool_executor.execute(
-                tool, tool_call.parameters, session
-            )
+            return await self.tool_executor.execute(tool, tool_call.parameters, session)
 
         # If no tool found, try mock execution (for service tools without DB definition)
-        return await self.tool_executor.execute_mock(
-            tool_name, tool_call.parameters, session.user_id
-        )
+        return await self.tool_executor.execute_mock(tool_name, tool_call.parameters, session.user_id)
 
-
-    def _get_root_agent(self) -> Optional[AgentConfig]:
+    def _get_root_agent(self) -> AgentConfig | None:
         """Get the root orchestrator agent (sync - no DB)."""
         return get_agent_registry().get_root_agent()
 
-    def _get_child_agent(self, parent: AgentConfig, child_name: str) -> Optional[AgentConfig]:
+    def _get_child_agent(self, parent: AgentConfig, child_name: str) -> AgentConfig | None:
         """Get a child agent by name or config ID (sync - no DB)."""
+
         # Normalize name for comparison
         def normalize(s: str) -> str:
             return s.lower().replace("-", "").replace("_", "").replace(" ", "")
@@ -1396,11 +1413,11 @@ class Orchestrator:
                 return child
         return None
 
-    def _get_tool_by_name(self, agent: AgentConfig, tool_name: str) -> Optional[ToolConfig]:
+    def _get_tool_by_name(self, agent: AgentConfig, tool_name: str) -> ToolConfig | None:
         """Get a tool by name from an agent (sync - no DB)."""
         return agent.get_tool(tool_name)
 
-    def _get_subflow_by_name(self, agent: AgentConfig, flow_name: str) -> Optional[SubflowConfig]:
+    def _get_subflow_by_name(self, agent: AgentConfig, flow_name: str) -> SubflowConfig | None:
         """Get a subflow by name (sync - no DB)."""
         for subflow in agent.subflows:
             if flow_name.lower() in subflow.name.lower():
@@ -1409,7 +1426,7 @@ class Orchestrator:
 
     def _ensure_routing_handler(self) -> RoutingHandler:
         """Lazy initialization of routing handler (sync - no DB)."""
-        tracer = getattr(self, '_current_tracer', None)
+        tracer = getattr(self, "_current_tracer", None)
         if self.routing_handler is None:
             self.routing_handler = RoutingHandler(
                 db=self.db,
@@ -1422,16 +1439,12 @@ class Orchestrator:
             self.routing_handler.tracer = tracer
         return self.routing_handler
 
-    async def _get_user_context(self, user_id: str) -> Optional[UserContext]:
+    async def _get_user_context(self, user_id: str) -> UserContext | None:
         """Get user context if available."""
-        result = await self.db.execute(
-            select(UserContext).where(UserContext.user_id == user_id)
-        )
+        result = await self.db.execute(select(UserContext).where(UserContext.user_id == user_id))
         return result.scalar_one_or_none()
 
-    async def _get_recent_messages(
-        self, session_id: UUID, limit: int = 20
-    ) -> List[ConversationMessage]:
+    async def _get_recent_messages(self, session_id: UUID, limit: int = 20) -> list[ConversationMessage]:
         """Get recent messages for a session."""
         result = await self.db.execute(
             select(ConversationMessage)
@@ -1447,9 +1460,9 @@ class Orchestrator:
         session: ConversationSession,
         user_message: str,
         assistant_message: str,
-        tool_calls: List[dict],
+        tool_calls: list[dict],
         agent: AgentConfig,
-        event_trace: Optional[List[dict]] = None,
+        event_trace: list[dict] | None = None,
     ) -> None:
         """Record messages to the database."""
         # User message

@@ -70,7 +70,7 @@ class ConditionEvaluator:
             tree = ast.parse(condition, mode="eval")
             result = self._eval_node(tree.body, context, context)
             return self._truthy(result)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("Failed to evaluate condition '%s': %s", condition, exc)
             return False
 
@@ -124,7 +124,7 @@ class ConditionEvaluator:
                 if isinstance(container, dict):
                     return container.get(key, MissingValue(str(key)))
                 return container[key]
-            except Exception:  # noqa: BLE001
+            except Exception:
                 return MissingValue(str(key))
 
         if isinstance(node, ast.Constant):
@@ -190,7 +190,7 @@ class ConditionEvaluator:
                 return left_value is right_value
             if isinstance(op, ast.IsNot):
                 return left_value is not right_value
-        except Exception:  # noqa: BLE001
+        except Exception:
             return False
 
         return False
@@ -264,4 +264,3 @@ _evaluator = ConditionEvaluator()
 def evaluate_condition(condition: str, context: dict[str, Any]) -> bool:
     """Convenience function for evaluating transition conditions."""
     return _evaluator.evaluate(condition, context)
-

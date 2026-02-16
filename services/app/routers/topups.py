@@ -1,13 +1,10 @@
 """TopUps service API router."""
 
-from typing import Optional
-
 from fastapi import APIRouter, Header, HTTPException
-from pydantic import BaseModel, Field, AliasChoices
+from pydantic import AliasChoices, BaseModel, Field
 
-from app.services.topups import MockTopUpsService
 from app.schemas.common import ServiceResponse
-
+from app.services.topups import MockTopUpsService
 
 router = APIRouter(prefix="/topups", tags=["topups"])
 
@@ -27,26 +24,18 @@ def get_service(language: str = "es") -> MockTopUpsService:
 
 class DetectCarrierRequest(BaseModel):
     """Request to detect carrier from phone number."""
-    phone_number: str = Field(
-        ...,
-        validation_alias=AliasChoices("phoneNumber", "phone_number")
-    )
+
+    phone_number: str = Field(..., validation_alias=AliasChoices("phoneNumber", "phone_number"))
 
 
 class SendTopupRequest(BaseModel):
     """Request to send a top-up."""
-    phone_number: str = Field(
-        ...,
-        validation_alias=AliasChoices("phoneNumber", "phone_number")
-    )
-    carrier_id: str = Field(
-        ...,
-        validation_alias=AliasChoices("carrierId", "carrier_id")
-    )
+
+    phone_number: str = Field(..., validation_alias=AliasChoices("phoneNumber", "phone_number"))
+    carrier_id: str = Field(..., validation_alias=AliasChoices("carrierId", "carrier_id"))
     amount: float = Field(gt=0)
     payment_method_id: str = Field(
-        default="pm_default",
-        validation_alias=AliasChoices("paymentMethodId", "payment_method_id")
+        default="pm_default", validation_alias=AliasChoices("paymentMethodId", "payment_method_id")
     )
 
 
@@ -56,7 +45,7 @@ class SendTopupRequest(BaseModel):
 @router.get("/carriers")
 async def get_carriers(
     country: str = "MX",
-    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_user_id: str | None = Header(None, alias="X-User-Id"),
     accept_language: str = Header("es", alias="Accept-Language"),
 ) -> ServiceResponse:
     """Get available carriers for a country."""
@@ -69,7 +58,7 @@ async def get_carriers(
 async def get_carrier(
     carrier_id: str,
     country: str = "MX",
-    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_user_id: str | None = Header(None, alias="X-User-Id"),
     accept_language: str = Header("es", alias="Accept-Language"),
 ) -> ServiceResponse:
     """Get a specific carrier."""
@@ -84,7 +73,7 @@ async def get_carrier(
 async def get_carrier_plans(
     carrier_id: str,
     country: str = "MX",
-    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_user_id: str | None = Header(None, alias="X-User-Id"),
     accept_language: str = Header("es", alias="Accept-Language"),
 ) -> ServiceResponse:
     """Get available plans for a carrier."""
@@ -110,7 +99,7 @@ async def get_frequent_numbers(
 @router.post("/detect-carrier")
 async def detect_carrier(
     request: DetectCarrierRequest,
-    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_user_id: str | None = Header(None, alias="X-User-Id"),
     accept_language: str = Header("es", alias="Accept-Language"),
 ) -> ServiceResponse:
     """Detect carrier from phone number."""
@@ -129,7 +118,7 @@ async def get_topup_price(
     carrier_id: str,
     amount: float,
     country: str = "MX",
-    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_user_id: str | None = Header(None, alias="X-User-Id"),
     accept_language: str = Header("es", alias="Accept-Language"),
 ) -> ServiceResponse:
     """Get the USD price for a top-up."""
@@ -138,7 +127,7 @@ async def get_topup_price(
         result = service.get_topup_price(carrier_id=carrier_id, amount=amount, country=country)
         return ServiceResponse(data=result)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail={"error": str(e)})
+        raise HTTPException(status_code=400, detail={"error": str(e)}) from e
 
 
 # ==================== TopUp Endpoints ====================
@@ -162,7 +151,7 @@ async def send_topup(
         )
         return ServiceResponse(data=result)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail={"error": str(e)})
+        raise HTTPException(status_code=400, detail={"error": str(e)}) from e
 
 
 @router.get("/history")

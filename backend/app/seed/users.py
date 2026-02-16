@@ -22,7 +22,7 @@ def load_sample_users() -> list:
         logger.warning(f"Sample users file not found: {users_file}")
         return []
 
-    with open(users_file, "r", encoding="utf-8") as f:
+    with open(users_file, encoding="utf-8") as f:
         data = json.load(f)
         return data.get("users", [])
 
@@ -43,9 +43,7 @@ async def seed_sample_users(db: AsyncSession) -> None:
             continue
 
         # Check if user already exists
-        result = await db.execute(
-            select(UserContext).where(UserContext.user_id == user_id)
-        )
+        result = await db.execute(select(UserContext).where(UserContext.user_id == user_id))
         if result.scalar_one_or_none():
             logger.debug(f"User {user_id} already exists, skipping")
             continue

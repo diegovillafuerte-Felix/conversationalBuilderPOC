@@ -20,7 +20,6 @@ Usage:
 """
 
 import argparse
-import json
 import logging
 import sys
 import time
@@ -36,7 +35,7 @@ from tests.e2e.scenarios import (
     get_scenario,
     get_smoke_scenarios,
 )
-from tests.e2e.server_manager import ServerManager, BACKEND_URL
+from tests.e2e.server_manager import BACKEND_URL, ServerManager
 
 logging.basicConfig(
     level=logging.INFO,
@@ -156,11 +155,13 @@ def run_turn(
 
     tool_calls = []
     for tc in data.get("tool_calls", []):
-        tool_calls.append({
-            "name": tc.get("tool_name", ""),
-            "params": tc.get("parameters", {}),
-            "result": tc.get("result"),
-        })
+        tool_calls.append(
+            {
+                "name": tc.get("tool_name", ""),
+                "params": tc.get("parameters", {}),
+                "result": tc.get("result"),
+            }
+        )
 
     return TurnResult(
         turn_number=turn_number,
@@ -197,10 +198,8 @@ def run_scenario(client: httpx.Client, scenario: Scenario) -> ScenarioResult:
 
         # Hard stop if HTTP failure or timeout — remaining turns won't work
         if result.http_status != 200:
-            for remaining_turn in scenario.turns[i:]:
-                all_gate_failures.append(
-                    f"SKIPPED: Turn {i+1} skipped due to prior failure"
-                )
+            for _remaining_turn in scenario.turns[i:]:
+                all_gate_failures.append(f"SKIPPED: Turn {i + 1} skipped due to prior failure")
             break
 
     total_seconds = time.time() - scenario_start
@@ -252,10 +251,7 @@ def format_result(result: ScenarioResult) -> str:
         lines.append("")
 
     status = "OK" if result.ok else f"GATE FAILURES ({len(result.gate_failures)})"
-    lines.append(
-        f"=== RESULT: {status} "
-        f"({len(result.turn_results)} turns, {result.total_seconds:.1f}s total) ==="
-    )
+    lines.append(f"=== RESULT: {status} ({len(result.turn_results)} turns, {result.total_seconds:.1f}s total) ===")
 
     if not result.ok:
         lines.append("")
@@ -336,10 +332,10 @@ def main():
     ok_count = sum(1 for r in all_results if r.ok)
     fail_count = len(all_results) - ok_count
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Results: {ok_count} OK, {fail_count} failed ({total_turns} turns, {total_time:.1f}s)")
     print(f"Output: {results_dir}/")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     # Write summary file
     summary_lines = ["=== E2E SUMMARY ===", ""]

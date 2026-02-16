@@ -1,13 +1,10 @@
 """BillPay service API router."""
 
-from typing import Optional
-
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 
-from app.services.billpay import MockBillPayService
 from app.schemas.common import ServiceResponse
-
+from app.services.billpay import MockBillPayService
 
 router = APIRouter(prefix="/billpay", tags=["billpay"])
 
@@ -27,12 +24,14 @@ def get_service(language: str = "es") -> MockBillPayService:
 
 class CalculatePaymentRequest(BaseModel):
     """Request to calculate payment amount."""
+
     biller_id: str
     amount_mxn: float = Field(gt=0)
 
 
 class PayBillRequest(BaseModel):
     """Request to pay a bill."""
+
     biller_id: str
     account_number: str
     amount: float = Field(gt=0)
@@ -41,6 +40,7 @@ class PayBillRequest(BaseModel):
 
 class SaveBillerRequest(BaseModel):
     """Request to save a biller."""
+
     biller_id: str
     account_number: str
     nickname: str
@@ -51,8 +51,8 @@ class SaveBillerRequest(BaseModel):
 
 @router.get("/billers")
 async def get_billers(
-    category: Optional[str] = None,
-    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    category: str | None = None,
+    x_user_id: str | None = Header(None, alias="X-User-Id"),
     accept_language: str = Header("es", alias="Accept-Language"),
 ) -> ServiceResponse:
     """Get available billers."""
@@ -64,7 +64,7 @@ async def get_billers(
 @router.get("/billers/{biller_id}")
 async def get_biller(
     biller_id: str,
-    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_user_id: str | None = Header(None, alias="X-User-Id"),
     accept_language: str = Header("es", alias="Accept-Language"),
 ) -> ServiceResponse:
     """Get a specific biller."""
@@ -79,7 +79,7 @@ async def get_biller(
 async def get_bill_details(
     biller_id: str,
     account_number: str,
-    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_user_id: str | None = Header(None, alias="X-User-Id"),
     accept_language: str = Header("es", alias="Accept-Language"),
 ) -> ServiceResponse:
     """Get bill details for an account."""
@@ -92,7 +92,7 @@ async def get_bill_details(
         )
         return ServiceResponse(data=result)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail={"error": str(e)})
+        raise HTTPException(status_code=400, detail={"error": str(e)}) from e
 
 
 # ==================== Saved Billers Endpoints ====================
@@ -126,7 +126,7 @@ async def save_biller(
         )
         return ServiceResponse(data=result)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail={"error": str(e)})
+        raise HTTPException(status_code=400, detail={"error": str(e)}) from e
 
 
 # ==================== Payment Endpoints ====================
@@ -135,7 +135,7 @@ async def save_biller(
 @router.post("/calculate")
 async def calculate_payment(
     request: CalculatePaymentRequest,
-    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_user_id: str | None = Header(None, alias="X-User-Id"),
     accept_language: str = Header("es", alias="Accept-Language"),
 ) -> ServiceResponse:
     """Calculate USD amount for a bill payment."""
@@ -165,7 +165,7 @@ async def pay_bill(
         )
         return ServiceResponse(data=result)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail={"error": str(e)})
+        raise HTTPException(status_code=400, detail={"error": str(e)}) from e
 
 
 @router.get("/history")

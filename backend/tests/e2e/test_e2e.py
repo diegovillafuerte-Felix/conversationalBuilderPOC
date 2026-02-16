@@ -12,9 +12,9 @@ import logging
 import httpx
 import pytest
 
+from tests.e2e.run_conversations import format_result, run_scenario
 from tests.e2e.scenarios import SCENARIOS, Scenario
-from tests.e2e.run_conversations import run_scenario, format_result
-from tests.e2e.server_manager import ServerManager, BACKEND_URL, SERVICES_URL
+from tests.e2e.server_manager import BACKEND_URL, SERVICES_URL, ServerManager
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +51,6 @@ def test_scenario(scenario: Scenario, live_servers, http_client: httpx.Client):
     # Log the full readable output for debugging
     logger.info("\n" + format_result(result))
 
-    assert result.ok, (
-        f"Scenario '{scenario.id}' had gate failures:\n"
-        + "\n".join(f"  - {gf}" for gf in result.gate_failures)
+    assert result.ok, f"Scenario '{scenario.id}' had gate failures:\n" + "\n".join(
+        f"  - {gf}" for gf in result.gate_failures
     )

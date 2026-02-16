@@ -2,9 +2,10 @@
 Campaigns Service - Mock service for managing promotions and campaigns
 used by the campaigns shadow subagent.
 """
+
 import random
 from datetime import datetime, timedelta
-from typing import Dict, Any, List, Optional
+from typing import Any
 
 
 class CampaignsService:
@@ -13,9 +14,9 @@ class CampaignsService:
     def __init__(self):
         # Mock campaign data
         self._campaigns = self._initialize_campaigns()
-        self._impressions: Dict[str, List[Dict[str, Any]]] = {}
+        self._impressions: dict[str, list[dict[str, Any]]] = {}
 
-    def _initialize_campaigns(self) -> List[Dict[str, Any]]:
+    def _initialize_campaigns(self) -> list[dict[str, Any]]:
         """Initialize mock campaigns."""
         today = datetime.now()
 
@@ -108,7 +109,7 @@ class CampaignsService:
             },
         ]
 
-    def get_active_campaigns(self, user_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    def get_active_campaigns(self, user_id: str | None = None) -> list[dict[str, Any]]:
         """
         Get currently active campaigns, optionally filtered by user eligibility.
 
@@ -144,14 +145,14 @@ class CampaignsService:
 
         return active
 
-    def get_campaign_by_id(self, campaign_id: str) -> Optional[Dict[str, Any]]:
+    def get_campaign_by_id(self, campaign_id: str) -> dict[str, Any] | None:
         """Get a specific campaign by ID."""
         for campaign in self._campaigns:
             if campaign["id"] == campaign_id:
                 return campaign
         return None
 
-    def check_user_eligibility(self, user_id: str, campaign_id: str) -> Dict[str, Any]:
+    def check_user_eligibility(self, user_id: str, campaign_id: str) -> dict[str, Any]:
         """
         Check if a user is eligible for a specific campaign.
 
@@ -168,10 +169,9 @@ class CampaignsService:
         max_uses = campaign.get("max_uses")
         if max_uses:
             user_impressions = self._impressions.get(user_id, [])
-            campaign_uses = len([
-                i for i in user_impressions
-                if i.get("campaign_id") == campaign_id and i.get("converted", False)
-            ])
+            campaign_uses = len(
+                [i for i in user_impressions if i.get("campaign_id") == campaign_id and i.get("converted", False)]
+            )
             if campaign_uses >= max_uses:
                 return {
                     "eligible": False,
@@ -189,10 +189,16 @@ class CampaignsService:
         return {
             "eligible": True,
             "campaign": campaign,
-            "remaining_uses": max_uses - len([
-                i for i in self._impressions.get(user_id, [])
-                if i.get("campaign_id") == campaign_id and i.get("converted", False)
-            ]) if max_uses else None,
+            "remaining_uses": max_uses
+            - len(
+                [
+                    i
+                    for i in self._impressions.get(user_id, [])
+                    if i.get("campaign_id") == campaign_id and i.get("converted", False)
+                ]
+            )
+            if max_uses
+            else None,
         }
 
     def record_campaign_impression(
@@ -201,7 +207,7 @@ class CampaignsService:
         campaign_id: str,
         context: str,
         converted: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Record that a campaign was shown to a user.
 
@@ -235,8 +241,8 @@ class CampaignsService:
     def get_campaigns_for_context(
         self,
         context: str,
-        user_id: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+        user_id: str | None = None,
+    ) -> list[dict[str, Any]]:
         """
         Get campaigns relevant to a specific context.
 
@@ -257,7 +263,7 @@ class CampaignsService:
 
         return relevant
 
-    def get_user_campaign_history(self, user_id: str) -> Dict[str, Any]:
+    def get_user_campaign_history(self, user_id: str) -> dict[str, Any]:
         """
         Get a user's campaign interaction history.
 
@@ -267,7 +273,7 @@ class CampaignsService:
         impressions = self._impressions.get(user_id, [])
 
         # Group by campaign
-        by_campaign: Dict[str, List[Dict[str, Any]]] = {}
+        by_campaign: dict[str, list[dict[str, Any]]] = {}
         for impression in impressions:
             campaign_id = impression["campaign_id"]
             if campaign_id not in by_campaign:
@@ -290,7 +296,7 @@ class CampaignsService:
 
 
 # Singleton instance
-_campaigns_service: Optional[CampaignsService] = None
+_campaigns_service: CampaignsService | None = None
 
 
 def get_campaigns_service() -> CampaignsService:

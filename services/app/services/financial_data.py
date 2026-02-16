@@ -2,9 +2,10 @@
 Financial Data Service - Mock service for external financial data
 used by the financial advisor shadow subagent.
 """
+
 import random
 from datetime import datetime, timedelta
-from typing import Dict, Any, List, Optional
+from typing import Any
 
 
 class FinancialDataService:
@@ -14,7 +15,7 @@ class FinancialDataService:
         # Mock exchange rate data
         self._rate_history = self._generate_rate_history()
 
-    def _generate_rate_history(self) -> Dict[str, List[Dict[str, Any]]]:
+    def _generate_rate_history(self) -> dict[str, list[dict[str, Any]]]:
         """Generate mock rate history for common corridors."""
         corridors = ["USD_MXN", "USD_GTM", "USD_HND", "USD_COL"]
         history = {}
@@ -32,15 +33,17 @@ class FinancialDataService:
                 date = datetime.now() - timedelta(days=29 - i)
                 # Add some randomness
                 rate = base_rate * (1 + random.uniform(-0.02, 0.02))
-                rates.append({
-                    "date": date.strftime("%Y-%m-%d"),
-                    "rate": round(rate, 4),
-                })
+                rates.append(
+                    {
+                        "date": date.strftime("%Y-%m-%d"),
+                        "rate": round(rate, 4),
+                    }
+                )
             history[corridor] = rates
 
         return history
 
-    def get_user_financial_summary(self, user_id: str) -> Dict[str, Any]:
+    def get_user_financial_summary(self, user_id: str) -> dict[str, Any]:
         """
         Get a summary of user's financial activity.
 
@@ -60,7 +63,7 @@ class FinancialDataService:
             "loyalty_points": random.randint(0, 1000),
         }
 
-    def get_rate_trends(self, corridor: str, days: int = 30) -> Dict[str, Any]:
+    def get_rate_trends(self, corridor: str, days: int = 30) -> dict[str, Any]:
         """
         Get exchange rate trends for a corridor.
 
@@ -75,7 +78,7 @@ class FinancialDataService:
         if not history:
             return {"error": f"Unknown corridor: {corridor}"}
 
-        recent = history[-min(days, len(history)):]
+        recent = history[-min(days, len(history)) :]
         rates = [r["rate"] for r in recent]
 
         return {
@@ -89,7 +92,7 @@ class FinancialDataService:
             "history": recent,
         }
 
-    def get_fee_optimization_tips(self, user_id: str) -> List[Dict[str, Any]]:
+    def get_fee_optimization_tips(self, user_id: str) -> list[dict[str, Any]]:
         """
         Get personalized fee optimization tips based on user's transaction patterns.
 
@@ -140,7 +143,7 @@ class FinancialDataService:
         # Randomly select 1-2 tips
         return random.sample(tips, min(random.randint(1, 2), len(tips)))
 
-    def get_spending_analysis(self, user_id: str) -> Dict[str, Any]:
+    def get_spending_analysis(self, user_id: str) -> dict[str, Any]:
         """
         Analyze user's spending patterns.
 
@@ -160,7 +163,7 @@ class FinancialDataService:
             "recommended_budget": round(random.uniform(500, 1500), 2),
         }
 
-    def get_savings_recommendations(self, user_id: str) -> List[Dict[str, Any]]:
+    def get_savings_recommendations(self, user_id: str) -> list[dict[str, Any]]:
         """
         Get personalized savings recommendations.
 
@@ -195,7 +198,7 @@ class FinancialDataService:
 
 
 # Singleton instance
-_financial_data_service: Optional[FinancialDataService] = None
+_financial_data_service: FinancialDataService | None = None
 
 
 def get_financial_data_service() -> FinancialDataService:

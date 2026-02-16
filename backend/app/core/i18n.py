@@ -1,7 +1,6 @@
 """Internationalization (i18n) utilities - simplified for English-only prompts."""
 
 import logging
-from typing import Optional
 
 from app.core.config_loader import load_prompts
 
@@ -12,10 +11,7 @@ SUPPORTED_LANGUAGES = {"en", "es"}
 DEFAULT_LANGUAGE = "es"
 
 # Language display names for the language directive
-LANGUAGE_DISPLAY_NAMES = {
-    "en": {"en": "English", "es": "Inglés"},
-    "es": {"en": "Spanish", "es": "Español"}
-}
+LANGUAGE_DISPLAY_NAMES = {"en": {"en": "English", "es": "Inglés"}, "es": {"en": "Spanish", "es": "Español"}}
 
 
 def get_language_display_name(language_code: str, in_language: str = "en") -> str:
@@ -53,7 +49,7 @@ def get_language_directive(language: str = DEFAULT_LANGUAGE) -> str:
         return template
 
 
-def normalize_language(language: Optional[str]) -> str:
+def normalize_language(language: str | None) -> str:
     """
     Normalize a language code to a supported value.
 

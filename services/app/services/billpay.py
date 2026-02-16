@@ -3,7 +3,6 @@
 import random
 import string
 from datetime import datetime, timedelta
-from typing import Optional
 
 
 def _random_string(length: int = 8) -> str:
@@ -78,13 +77,13 @@ class MockBillPayService:
             ]
         }
 
-    def get_billers(self, category: Optional[str] = None) -> list:
+    def get_billers(self, category: str | None = None) -> list:
         """Get available billers, optionally filtered by category."""
         if category:
             return [b for b in self._billers if b["category"] == category]
         return self._billers
 
-    def get_biller(self, biller_id: str) -> Optional[dict]:
+    def get_biller(self, biller_id: str) -> dict | None:
         """Get a specific biller."""
         for b in self._billers:
             if b["id"] == biller_id:
@@ -99,7 +98,7 @@ class MockBillPayService:
         self,
         biller_id: str,
         account_number: str,
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
     ) -> dict:
         """Get bill details for an account."""
         biller = self.get_biller(biller_id)
@@ -145,7 +144,7 @@ class MockBillPayService:
         account_number: str,
         amount: float,
         payment_method_id: str = "pm_default",
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
     ) -> dict:
         """Pay a bill."""
         biller = self.get_biller(biller_id)
@@ -179,7 +178,7 @@ class MockBillPayService:
         biller_id: str,
         account_number: str,
         nickname: str,
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
     ) -> dict:
         """Save a biller for quick access."""
         biller = self.get_biller(biller_id)

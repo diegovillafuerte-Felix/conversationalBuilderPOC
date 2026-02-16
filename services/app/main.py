@@ -5,15 +5,14 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.routers import (
+    billpay,
+    campaigns,
+    financial_data,
     remittances,
     snpl,
     topups,
-    billpay,
     wallet,
-    financial_data,
-    campaigns,
 )
-
 
 settings = get_settings()
 

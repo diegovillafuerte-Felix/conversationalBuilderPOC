@@ -6,7 +6,6 @@ for agent configuration. Session/message data still uses DB models.
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional, List, Dict, Any
 
 from app.core.routing import RoutingConfig, RoutingType
 
@@ -19,6 +18,7 @@ class PromptMode(Enum):
     ROUTING: Routing decisions - minimal context for agent/flow routing only
              (brief system prompt, routing tools only, single user message)
     """
+
     FULL = "full"
     ROUTING = "routing"
 
@@ -34,14 +34,15 @@ class TransitionTrigger(Enum):
 @dataclass
 class ToolConfig:
     """Tool definition loaded from JSON config."""
+
     name: str
     description: str
-    parameters: List[dict] = field(default_factory=list)
+    parameters: list[dict] = field(default_factory=list)
     requires_confirmation: bool = False
-    confirmation_template: Optional[str] = None
+    confirmation_template: str | None = None
     side_effects: str = "none"  # none, read, write, financial
-    flow_transition: Optional[dict] = None
-    routing: Optional[RoutingConfig] = None
+    flow_transition: dict | None = None
+    routing: RoutingConfig | None = None
 
     def to_openai_tool(self) -> dict:
         """Convert to OpenAI API tool format."""
@@ -78,26 +79,14 @@ class ToolConfig:
             routing = RoutingConfig.from_dict(data["routing"])
         # Legacy: starts_flow field
         elif "starts_flow" in data:
-            routing = RoutingConfig(
-                type=RoutingType.START_FLOW,
-                target=data["starts_flow"]
-            )
+            routing = RoutingConfig(type=RoutingType.START_FLOW, target=data["starts_flow"])
         # Infer routing from tool name conventions
         elif data["name"].startswith("enter_"):
-            routing = RoutingConfig(
-                type=RoutingType.ENTER_AGENT,
-                target=data["name"].replace("enter_", "")
-            )
+            routing = RoutingConfig(type=RoutingType.ENTER_AGENT, target=data["name"].replace("enter_", ""))
         elif data["name"].startswith("start_flow_"):
-            routing = RoutingConfig(
-                type=RoutingType.START_FLOW,
-                target=data["name"].replace("start_flow_", "")
-            )
+            routing = RoutingConfig(type=RoutingType.START_FLOW, target=data["name"].replace("start_flow_", ""))
         elif data["name"] in ["go_home", "up_one_level", "escalate_to_human"]:
-            routing = RoutingConfig(
-                type=RoutingType.NAVIGATION,
-                target=data["name"]
-            )
+            routing = RoutingConfig(type=RoutingType.NAVIGATION, target=data["name"])
 
         return cls(
             name=data["name"],
@@ -114,12 +103,13 @@ class ToolConfig:
 @dataclass
 class SubflowStateConfig:
     """Flow state definition loaded from JSON config."""
+
     state_id: str
     name: str
     agent_instructions: str
-    state_tools: List[str] = field(default_factory=list)
-    transitions: List[dict] = field(default_factory=list)
-    on_enter: Optional[dict] = None
+    state_tools: list[str] = field(default_factory=list)
+    transitions: list[dict] = field(default_factory=list)
+    on_enter: dict | None = None
     is_final: bool = False
 
     @classmethod
@@ -145,13 +135,14 @@ class SubflowStateConfig:
             # - Conditions referencing tool result fire after tool execution
             # - All other transitions fire on user turn
             if "transition_trigger" not in normalized:
-                if normalized.get("tool_trigger"):
-                    normalized["transition_trigger"] = TransitionTrigger.ON_TOOL_RESULT.value
-                elif isinstance(normalized.get("condition"), str) and (
-                    "_tool_result" in normalized["condition"] or "_result_" in normalized["condition"]
+                if (
+                    normalized.get("tool_trigger")
+                    or (
+                        isinstance(normalized.get("condition"), str)
+                        and ("_tool_result" in normalized["condition"] or "_result_" in normalized["condition"])
+                    )
+                    or (has_tool_result_signal and not normalized.get("condition"))
                 ):
-                    normalized["transition_trigger"] = TransitionTrigger.ON_TOOL_RESULT.value
-                elif has_tool_result_signal and not normalized.get("condition"):
                     normalized["transition_trigger"] = TransitionTrigger.ON_TOOL_RESULT.value
                 else:
                     normalized["transition_trigger"] = TransitionTrigger.ON_USER_TURN.value
@@ -172,6 +163,7 @@ class SubflowStateConfig:
 @dataclass
 class SubflowConfig:
     """Subflow definition loaded from JSON config."""
+
     config_id: str
     agent_id: str  # Parent agent's config_id
     name: str
@@ -179,7 +171,7 @@ class SubflowConfig:
     initial_state: str
     data_schema: dict = field(default_factory=dict)
     timeout_config: dict = field(default_factory=dict)
-    states: Dict[str, SubflowStateConfig] = field(default_factory=dict)
+    states: dict[str, SubflowStateConfig] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: dict, agent_id: str) -> "SubflowConfig":
@@ -204,10 +196,11 @@ class SubflowConfig:
 @dataclass
 class ResponseTemplateConfig:
     """Response template loaded from JSON config."""
+
     name: str
     trigger_config: dict
     template: str
-    required_fields: List[str] = field(default_factory=list)
+    required_fields: list[str] = field(default_factory=list)
     enforcement: str = "suggested"
 
     @classmethod
@@ -225,26 +218,19 @@ class ResponseTemplateConfig:
 @dataclass
 class AgentConfig:
     """Agent configuration loaded from JSON config."""
+
     config_id: str
     name: str
     description: str
-    parent_agent_id: Optional[str] = None
-    system_prompt_addition: Optional[str] = None
-    model_config: dict = field(default_factory=lambda: {
-        "model": "gpt-5.2",
-        "temperature": 0.7,
-        "maxTokens": 1024
-    })
-    navigation_tools: dict = field(default_factory=lambda: {
-        "canGoUp": False,
-        "canGoHome": False,
-        "canEscalate": True
-    })
-    tools: List[ToolConfig] = field(default_factory=list)
-    subflows: List[SubflowConfig] = field(default_factory=list)
-    response_templates: List[ResponseTemplateConfig] = field(default_factory=list)
+    parent_agent_id: str | None = None
+    system_prompt_addition: str | None = None
+    model_config: dict = field(default_factory=lambda: {"model": "gpt-5.2", "temperature": 0.7, "maxTokens": 1024})
+    navigation_tools: dict = field(default_factory=lambda: {"canGoUp": False, "canGoHome": False, "canEscalate": True})
+    tools: list[ToolConfig] = field(default_factory=list)
+    subflows: list[SubflowConfig] = field(default_factory=list)
+    response_templates: list[ResponseTemplateConfig] = field(default_factory=list)
     raw_config: dict = field(default_factory=dict)  # Full JSON for reference
-    default_tools: List[str] = field(default_factory=list)  # Tool whitelist for non-flow contexts
+    default_tools: list[str] = field(default_factory=list)  # Tool whitelist for non-flow contexts
 
     @classmethod
     def from_dict(cls, data: dict) -> "AgentConfig":
@@ -253,10 +239,7 @@ class AgentConfig:
 
         tools = [ToolConfig.from_dict(t) for t in data.get("tools", [])]
         subflows = [SubflowConfig.from_dict(s, config_id) for s in data.get("subflows", [])]
-        response_templates = [
-            ResponseTemplateConfig.from_dict(t)
-            for t in data.get("response_templates", [])
-        ]
+        response_templates = [ResponseTemplateConfig.from_dict(t) for t in data.get("response_templates", [])]
 
         return cls(
             config_id=config_id,
@@ -264,16 +247,8 @@ class AgentConfig:
             description=data.get("description", ""),
             parent_agent_id=data.get("parent_agent"),
             system_prompt_addition=data.get("system_prompt_addition"),
-            model_config=data.get("model_config", {
-                "model": "gpt-5.2",
-                "temperature": 0.7,
-                "maxTokens": 1024
-            }),
-            navigation_tools=data.get("navigation", {
-                "canGoUp": False,
-                "canGoHome": False,
-                "canEscalate": True
-            }),
+            model_config=data.get("model_config", {"model": "gpt-5.2", "temperature": 0.7, "maxTokens": 1024}),
+            navigation_tools=data.get("navigation", {"canGoUp": False, "canGoHome": False, "canEscalate": True}),
             tools=tools,
             subflows=subflows,
             response_templates=response_templates,
@@ -281,14 +256,14 @@ class AgentConfig:
             default_tools=data.get("default_tools", []),
         )
 
-    def get_tool(self, name: str) -> Optional[ToolConfig]:
+    def get_tool(self, name: str) -> ToolConfig | None:
         """Get tool by name."""
         for tool in self.tools:
             if tool.name == name:
                 return tool
         return None
 
-    def get_subflow(self, config_id: str) -> Optional[SubflowConfig]:
+    def get_subflow(self, config_id: str) -> SubflowConfig | None:
         """Get subflow by config_id."""
         for subflow in self.subflows:
             if subflow.config_id == config_id:

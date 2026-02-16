@@ -1,18 +1,15 @@
 """Campaigns service API router."""
 
-from typing import Optional
-
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
-from app.services.campaigns import CampaignsService
 from app.schemas.common import ServiceResponse
-
+from app.services.campaigns import CampaignsService
 
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
 
 # Singleton service instance
-_service: Optional[CampaignsService] = None
+_service: CampaignsService | None = None
 
 
 def get_service() -> CampaignsService:
@@ -28,6 +25,7 @@ def get_service() -> CampaignsService:
 
 class RecordImpressionRequest(BaseModel):
     """Request to record a campaign impression."""
+
     campaign_id: str
     context: str
     converted: bool = False
@@ -38,7 +36,7 @@ class RecordImpressionRequest(BaseModel):
 
 @router.get("/active")
 async def get_active_campaigns(
-    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_user_id: str | None = Header(None, alias="X-User-Id"),
     accept_language: str = Header("es", alias="Accept-Language"),
 ) -> ServiceResponse:
     """Get currently active campaigns."""
@@ -50,7 +48,7 @@ async def get_active_campaigns(
 @router.get("/{campaign_id}")
 async def get_campaign_by_id(
     campaign_id: str,
-    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_user_id: str | None = Header(None, alias="X-User-Id"),
     accept_language: str = Header("es", alias="Accept-Language"),
 ) -> ServiceResponse:
     """Get a specific campaign by ID."""
@@ -76,7 +74,7 @@ async def check_user_eligibility(
 @router.get("/by-context")
 async def get_campaigns_for_context(
     context: str,
-    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_user_id: str | None = Header(None, alias="X-User-Id"),
     accept_language: str = Header("es", alias="Accept-Language"),
 ) -> ServiceResponse:
     """Get campaigns matching a specific context."""

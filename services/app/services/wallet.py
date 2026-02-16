@@ -3,7 +3,6 @@
 import random
 import string
 from datetime import datetime, timedelta
-from typing import Optional
 
 
 def _random_string(length: int = 8) -> str:
@@ -49,15 +48,13 @@ class MockWalletService:
 
     def get_payment_methods(self, user_id: str) -> list:
         """Get linked payment methods."""
-        return self._payment_methods.get(
-            user_id, self._payment_methods.get("user_demo", [])
-        )
+        return self._payment_methods.get(user_id, self._payment_methods.get("user_demo", []))
 
     def add_funds(
         self,
         amount: float,
         payment_method_id: str = "pm_1",
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
     ) -> dict:
         """Add funds to wallet."""
         user = user_id or "user_demo"
@@ -103,7 +100,7 @@ class MockWalletService:
         self,
         method_type: str,
         token: str,
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
     ) -> dict:
         """Add a new payment method."""
         new_method = {
@@ -119,9 +116,7 @@ class MockWalletService:
             "status": "added",
         }
 
-    def remove_payment_method(
-        self, payment_method_id: str, user_id: Optional[str] = None
-    ) -> dict:
+    def remove_payment_method(self, payment_method_id: str, user_id: str | None = None) -> dict:
         """Remove a payment method."""
         return {
             "paymentMethodId": payment_method_id,

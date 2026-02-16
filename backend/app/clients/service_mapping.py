@@ -34,7 +34,6 @@ SERVICE_MAPPING = {
     "get_recipients": ("GET", "/api/v1/remittances/recipients"),
     "calculate_transfer": ("POST", "/api/v1/remittances/quotes"),
     "get_recent_transfers": ("GET", "/api/v1/remittances/transfers"),
-
     # ==================== SNPL (Send Now Pay Later) ====================
     "get_snpl_eligibility": ("GET", "/api/v1/snpl/eligibility"),
     "get_eligibility": ("GET", "/api/v1/snpl/eligibility"),
@@ -50,7 +49,6 @@ SERVICE_MAPPING = {
     "make_snpl_payment": ("POST", "/api/v1/snpl/payments"),
     "make_payment": ("POST", "/api/v1/snpl/payments"),
     "use_credit_for_remittance": ("POST", "/api/v1/snpl/loans/{loan_id}/use-for-remittance"),
-
     # ==================== TopUps ====================
     "get_carriers": ("GET", "/api/v1/topups/carriers"),
     "get_carrier": ("GET", "/api/v1/topups/carriers/{carrier_id}"),
@@ -60,7 +58,6 @@ SERVICE_MAPPING = {
     "get_topup_price": ("GET", "/api/v1/topups/price"),
     "send_topup": ("POST", "/api/v1/topups"),
     "get_topup_history": ("GET", "/api/v1/topups/history"),
-
     # ==================== BillPay ====================
     "get_billers": ("GET", "/api/v1/billpay/billers"),
     "get_biller": ("GET", "/api/v1/billpay/billers/{biller_id}"),
@@ -70,7 +67,6 @@ SERVICE_MAPPING = {
     "pay_bill": ("POST", "/api/v1/billpay/payments"),
     "save_biller": ("POST", "/api/v1/billpay/saved"),
     # Note: get_payment_history is also in SNPL, billpay's is for bill payments
-
     # ==================== Wallet ====================
     "get_balance": ("GET", "/api/v1/wallet/balance"),
     "get_payment_methods": ("GET", "/api/v1/wallet/payment-methods"),
@@ -78,14 +74,12 @@ SERVICE_MAPPING = {
     "get_transactions": ("GET", "/api/v1/wallet/transactions"),
     "add_payment_method": ("POST", "/api/v1/wallet/payment-methods"),
     "remove_payment_method": ("DELETE", "/api/v1/wallet/payment-methods/{payment_method_id}"),
-
     # ==================== Financial Data ====================
     "get_user_financial_summary": ("GET", "/api/v1/financial-data/summary"),
     "get_rate_trends": ("GET", "/api/v1/financial-data/rate-trends"),
     "get_fee_optimization_tips": ("GET", "/api/v1/financial-data/optimization-tips"),
     "get_spending_analysis": ("GET", "/api/v1/financial-data/spending-analysis"),
     "get_savings_recommendations": ("GET", "/api/v1/financial-data/savings-recommendations"),
-
     # ==================== Campaigns ====================
     "get_active_campaigns": ("GET", "/api/v1/campaigns/active"),
     "get_campaign_by_id": ("GET", "/api/v1/campaigns/{campaign_id}"),

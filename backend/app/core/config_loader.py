@@ -3,9 +3,8 @@
 import json
 import logging
 import re
-from pathlib import Path
 from functools import lru_cache
-from typing import Optional
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -29,11 +28,7 @@ def _warn_unknown_placeholders(agent_id: str, config: dict) -> None:
     """Best-effort warnings for placeholders unlikely to resolve at runtime."""
     tools = config.get("tools", [])
     subflows = config.get("subflows", [])
-    known_flow_keys = {
-        key
-        for subflow in subflows
-        for key in (subflow.get("data_schema") or {}).keys()
-    }
+    known_flow_keys = {key for subflow in subflows for key in (subflow.get("data_schema") or {})}
     runtime_keys = {
         "amount",
         "amount_usd",
@@ -81,8 +76,7 @@ def _warn_unknown_placeholders(agent_id: str, config: dict) -> None:
             unknown = {
                 placeholder
                 for placeholder in placeholders
-                if placeholder.split(".")[0] not in schema_keys
-                and placeholder.split(".")[0] not in runtime_keys
+                if placeholder.split(".")[0] not in schema_keys and placeholder.split(".")[0] not in runtime_keys
             }
             if unknown:
                 logger.warning(
@@ -195,7 +189,7 @@ def load_confirmation_templates() -> dict:
         return {"templates": {}}
 
 
-def get_confirmation_template(template_id: str) -> Optional[dict]:
+def get_confirmation_template(template_id: str) -> dict | None:
     """
     Get a specific confirmation template if enabled.
 
@@ -233,6 +227,7 @@ def get_config_dir() -> Path:
 
 # ============== JSON Write Functions ==============
 
+
 def get_agent_ids() -> list[str]:
     """
     Get list of all agent IDs from JSON files.
@@ -269,7 +264,7 @@ def save_agent_config(agent_id: str, config: dict) -> bool:
     filepath = AGENTS_DIR / f"{agent_id}.json"
 
     try:
-        with open(filepath, 'w', encoding='utf-8') as f:
+        with open(filepath, "w", encoding="utf-8") as f:
             json.dump(config, f, indent=2, ensure_ascii=False)
 
         # Clear cache so next read gets fresh data

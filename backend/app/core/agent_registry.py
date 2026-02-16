@@ -5,23 +5,23 @@ for agent configuration loaded from JSON files.
 """
 
 import logging
-from typing import Dict, List, Optional
 from threading import Lock
 
-from app.core.config_loader import load_agent_config, get_agent_ids, reload_configs
+from app.core.config_loader import get_agent_ids, load_agent_config, reload_configs
 from app.core.config_types import (
     AgentConfig,
     SubflowConfig,
     SubflowStateConfig,
     ToolConfig,
 )
-from app.core.routing import RoutingConfig, RoutingType, RoutingResult
+from app.core.routing import RoutingConfig, RoutingResult, RoutingType
 
 logger = logging.getLogger(__name__)
 
 
 class AgentRegistryError(Exception):
     """Raised when registry initialization or validation fails."""
+
     pass
 
 
@@ -32,10 +32,10 @@ class AgentRegistry:
     """
 
     def __init__(self):
-        self._agents: Dict[str, AgentConfig] = {}           # config_id -> agent
-        self._tool_routing: Dict[str, RoutingConfig] = {}   # tool_name -> routing
-        self._children: Dict[str, List[str]] = {}           # parent_id -> [child_ids]
-        self._root_agent_id: Optional[str] = None
+        self._agents: dict[str, AgentConfig] = {}  # config_id -> agent
+        self._tool_routing: dict[str, RoutingConfig] = {}  # tool_name -> routing
+        self._children: dict[str, list[str]] = {}  # parent_id -> [child_ids]
+        self._root_agent_id: str | None = None
         self._initialized = False
         self._lock = Lock()  # For thread-safe reload
 
@@ -75,9 +75,7 @@ class AgentRegistry:
             if errors:
                 for error in errors:
                     logger.error(f"Registry validation error: {error}")
-                raise AgentRegistryError(
-                    f"Registry validation failed with {len(errors)} error(s). First: {errors[0]}"
-                )
+                raise AgentRegistryError(f"Registry validation failed with {len(errors)} error(s). First: {errors[0]}")
 
             self._initialized = True
             logger.info(
@@ -85,7 +83,7 @@ class AgentRegistry:
                 f"{len(self._tool_routing)} tool routes, root={self._root_agent_id}"
             )
 
-    def validate(self) -> List[str]:
+    def validate(self) -> list[str]:
         """Validate all configurations. Returns list of errors."""
         errors = []
 
@@ -105,11 +103,16 @@ class AgentRegistry:
                             )
                     for transition in state.transitions:
                         target = transition.get("target")
-                        if target and target not in state_ids and target not in {
-                            "exit",
-                            "abandon",
-                            "go_home",
-                        }:
+                        if (
+                            target
+                            and target not in state_ids
+                            and target
+                            not in {
+                                "exit",
+                                "abandon",
+                                "go_home",
+                            }
+                        ):
                             errors.append(
                                 f"Agent '{agent.config_id}' / Flow '{subflow.config_id}' / "
                                 f"State '{state.state_id}': transition target '{target}' does not exist"
@@ -132,9 +135,7 @@ class AgentRegistry:
                     continue
                 if tool.routing.type == RoutingType.ENTER_AGENT:
                     if tool.routing.target and tool.routing.target not in self._agents:
-                        errors.append(
-                            f"Tool '{tool.name}' routes to unknown agent: {tool.routing.target}"
-                        )
+                        errors.append(f"Tool '{tool.name}' routes to unknown agent: {tool.routing.target}")
                 elif tool.routing.type == RoutingType.START_FLOW:
                     # Check that the target subflow exists in the current agent or cross_agent
                     target_agent_id = tool.routing.cross_agent or agent.config_id
@@ -142,9 +143,7 @@ class AgentRegistry:
                     if target_agent:
                         subflow_ids = {s.config_id for s in target_agent.subflows}
                         if tool.routing.target and tool.routing.target not in subflow_ids:
-                            errors.append(
-                                f"Tool '{tool.name}' routes to unknown subflow: {tool.routing.target}"
-                            )
+                            errors.append(f"Tool '{tool.name}' routes to unknown subflow: {tool.routing.target}")
 
         return errors
 
@@ -156,37 +155,35 @@ class AgentRegistry:
 
     # --- Agent lookups ---
 
-    def get_agent(self, config_id: str) -> Optional[AgentConfig]:
+    def get_agent(self, config_id: str) -> AgentConfig | None:
         """Get agent by config_id."""
         return self._agents.get(config_id)
 
-    def get_root_agent(self) -> Optional[AgentConfig]:
+    def get_root_agent(self) -> AgentConfig | None:
         """Get the root agent (no parent)."""
         if self._root_agent_id:
             return self._agents.get(self._root_agent_id)
         return None
 
-    def get_children(self, parent_config_id: str) -> List[AgentConfig]:
+    def get_children(self, parent_config_id: str) -> list[AgentConfig]:
         """Get child agents of a parent."""
         child_ids = self._children.get(parent_config_id, [])
         return [self._agents[cid] for cid in child_ids if cid in self._agents]
 
-    def get_all_agents(self) -> List[AgentConfig]:
+    def get_all_agents(self) -> list[AgentConfig]:
         """Get all agents."""
         return list(self._agents.values())
 
     # --- Subflow/state lookups ---
 
-    def get_subflow(self, agent_id: str, subflow_id: str) -> Optional[SubflowConfig]:
+    def get_subflow(self, agent_id: str, subflow_id: str) -> SubflowConfig | None:
         """Get subflow by agent and subflow config_ids."""
         agent = self._agents.get(agent_id)
         if agent:
             return agent.get_subflow(subflow_id)
         return None
 
-    def get_flow_state(
-        self, agent_id: str, subflow_id: str, state_id: str
-    ) -> Optional[SubflowStateConfig]:
+    def get_flow_state(self, agent_id: str, subflow_id: str, state_id: str) -> SubflowStateConfig | None:
         """Get flow state by agent, subflow, and state ids."""
         subflow = self.get_subflow(agent_id, subflow_id)
         if subflow:
@@ -195,7 +192,7 @@ class AgentRegistry:
 
     # --- Tool/routing lookups ---
 
-    def get_tool(self, agent_id: str, tool_name: str) -> Optional[ToolConfig]:
+    def get_tool(self, agent_id: str, tool_name: str) -> ToolConfig | None:
         """Get tool by agent and tool name."""
         agent = self._agents.get(agent_id)
         if agent:
@@ -221,14 +218,9 @@ class AgentRegistry:
                     action=routing.type,
                     target_id=None,
                     target_entity=None,
-                    error=f"Agent not found: {routing.target}"
+                    error=f"Agent not found: {routing.target}",
                 )
-            return RoutingResult(
-                success=True,
-                action=routing.type,
-                target_id=agent.config_id,
-                target_entity=agent
-            )
+            return RoutingResult(success=True, action=routing.type, target_id=agent.config_id, target_entity=agent)
 
         elif routing.type == RoutingType.START_FLOW:
             # For flows, the caller must provide current agent context
@@ -237,38 +229,26 @@ class AgentRegistry:
                 success=True,
                 action=routing.type,
                 target_id=routing.target,
-                target_entity=None  # Subflow resolved by caller with agent context
+                target_entity=None,  # Subflow resolved by caller with agent context
             )
 
         elif routing.type == RoutingType.NAVIGATION:
-            return RoutingResult(
-                success=True,
-                action=routing.type,
-                target_id=routing.target,
-                target_entity=None
-            )
+            return RoutingResult(success=True, action=routing.type, target_id=routing.target, target_entity=None)
 
         else:  # SERVICE
-            return RoutingResult(
-                success=True,
-                action=routing.type,
-                target_id=None,
-                target_entity=None
-            )
+            return RoutingResult(success=True, action=routing.type, target_id=None, target_entity=None)
 
 
 # --- Singleton pattern ---
 
-_registry: Optional[AgentRegistry] = None
+_registry: AgentRegistry | None = None
 
 
 def get_agent_registry() -> AgentRegistry:
     """Get the global AgentRegistry instance."""
     global _registry
     if _registry is None:
-        raise RuntimeError(
-            "AgentRegistry not initialized. Call initialize_agent_registry() first."
-        )
+        raise RuntimeError("AgentRegistry not initialized. Call initialize_agent_registry() first.")
     return _registry
 
 

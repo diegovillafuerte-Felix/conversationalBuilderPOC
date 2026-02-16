@@ -3,7 +3,6 @@
 import random
 import string
 from datetime import datetime, timedelta
-from typing import Optional, List, Dict, Any
 
 
 def _random_string(length: int = 8) -> str:
@@ -336,16 +335,18 @@ class MockRemittancesService:
 
     # ==================== CORRIDOR & RATE TOOLS ====================
 
-    def get_corridors(self, user_id: Optional[str] = None) -> dict:
+    def get_corridors(self, user_id: str | None = None) -> dict:
         """Get all supported country corridors."""
         corridors = []
         for code, config in CORRIDORS.items():
-            corridors.append({
-                "country_code": code,
-                "country_name": config["name"],
-                "currency": config["currency"],
-                "delivery_methods": config["delivery_methods"],
-            })
+            corridors.append(
+                {
+                    "country_code": code,
+                    "country_name": config["name"],
+                    "currency": config["currency"],
+                    "delivery_methods": config["delivery_methods"],
+                }
+            )
 
         return {
             "corridors": corridors,
@@ -354,9 +355,9 @@ class MockRemittancesService:
     def get_exchange_rate(
         self,
         country: str = "MX",
-        to_currency: Optional[str] = None,
+        to_currency: str | None = None,
         from_currency: str = "USD",
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
     ) -> dict:
         """Get current exchange rate for a corridor."""
         corridor = CORRIDORS.get(country)
@@ -384,7 +385,7 @@ class MockRemittancesService:
         amount_usd: float,
         country: str = "MX",
         delivery_type: str = "BANK",
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
     ) -> dict:
         """Create a full quote with fees and conversion."""
         corridor = CORRIDORS.get(country)
@@ -425,7 +426,7 @@ class MockRemittancesService:
 
     def list_recipients(
         self,
-        country: Optional[str] = None,
+        country: str | None = None,
         user_id: str = "user_demo",
     ) -> dict:
         """List user's saved recipients."""
@@ -439,22 +440,21 @@ class MockRemittancesService:
             country_name = CORRIDORS.get(r["country"], {}).get("name", "")
             default_method = next(
                 (dm for dm in r.get("delivery_methods", []) if dm.get("is_default")),
-                r.get("delivery_methods", [{}])[0] if r.get("delivery_methods") else {}
+                r.get("delivery_methods", [{}])[0] if r.get("delivery_methods") else {},
             )
-            formatted.append({
-                "id": r["id"],
-                "name": r["name"]["display_name"],
-                "country": r["country"],
-                "country_name": country_name,
-                "default_delivery_method": default_method.get("display_name", ""),
-                "last_transfer": r.get("last_transfer_at"),
-            })
+            formatted.append(
+                {
+                    "id": r["id"],
+                    "name": r["name"]["display_name"],
+                    "country": r["country"],
+                    "country_name": country_name,
+                    "default_delivery_method": default_method.get("display_name", ""),
+                    "last_transfer": r.get("last_transfer_at"),
+                }
+            )
 
         # Return raw data only - formatting handled by response template
-        return {
-            "recipients": formatted,
-            "count": len(formatted)
-        }
+        return {"recipients": formatted, "count": len(formatted)}
 
     def get_recipient(
         self,
@@ -490,16 +490,16 @@ class MockRemittancesService:
         last_name: str,
         country: str,
         delivery_type: str,
-        city: Optional[str] = None,
-        state: Optional[str] = None,
-        bank_name: Optional[str] = None,
-        account_number: Optional[str] = None,
-        clabe: Optional[str] = None,
-        account_type: Optional[str] = None,
-        card_number: Optional[str] = None,
-        wallet_type: Optional[str] = None,
-        phone_number: Optional[str] = None,
-        middle_name: Optional[str] = None,
+        city: str | None = None,
+        state: str | None = None,
+        bank_name: str | None = None,
+        account_number: str | None = None,
+        clabe: str | None = None,
+        account_type: str | None = None,
+        card_number: str | None = None,
+        wallet_type: str | None = None,
+        phone_number: str | None = None,
+        middle_name: str | None = None,
         user_id: str = "user_demo",
     ) -> dict:
         """Add a new recipient with delivery method."""
@@ -585,16 +585,16 @@ class MockRemittancesService:
         last_name: str,
         country: str,
         delivery_type: str,
-        city: Optional[str] = None,
-        state: Optional[str] = None,
-        bank_name: Optional[str] = None,
-        account_number: Optional[str] = None,
-        clabe: Optional[str] = None,
-        account_type: Optional[str] = None,
-        card_number: Optional[str] = None,
-        wallet_type: Optional[str] = None,
-        phone_number: Optional[str] = None,
-        middle_name: Optional[str] = None,
+        city: str | None = None,
+        state: str | None = None,
+        bank_name: str | None = None,
+        account_number: str | None = None,
+        clabe: str | None = None,
+        account_type: str | None = None,
+        card_number: str | None = None,
+        wallet_type: str | None = None,
+        phone_number: str | None = None,
+        middle_name: str | None = None,
         user_id: str = "user_demo",
     ) -> dict:
         """Alias for add_recipient (used by flow)."""
@@ -620,15 +620,15 @@ class MockRemittancesService:
         self,
         recipient_id: str,
         delivery_type: str,
-        bank_name: Optional[str] = None,
-        account_number: Optional[str] = None,
-        clabe: Optional[str] = None,
-        account_type: Optional[str] = None,
-        card_number: Optional[str] = None,
-        wallet_type: Optional[str] = None,
-        phone_number: Optional[str] = None,
-        city: Optional[str] = None,
-        state: Optional[str] = None,
+        bank_name: str | None = None,
+        account_number: str | None = None,
+        clabe: str | None = None,
+        account_type: str | None = None,
+        card_number: str | None = None,
+        wallet_type: str | None = None,
+        phone_number: str | None = None,
+        city: str | None = None,
+        state: str | None = None,
         user_id: str = "user_demo",
     ) -> dict:
         """Add a new delivery method to an existing recipient."""
@@ -690,15 +690,15 @@ class MockRemittancesService:
         self,
         recipient_id: str,
         delivery_type: str,
-        bank_name: Optional[str] = None,
-        account_number: Optional[str] = None,
-        clabe: Optional[str] = None,
-        account_type: Optional[str] = None,
-        card_number: Optional[str] = None,
-        wallet_type: Optional[str] = None,
-        phone_number: Optional[str] = None,
-        city: Optional[str] = None,
-        state: Optional[str] = None,
+        bank_name: str | None = None,
+        account_number: str | None = None,
+        clabe: str | None = None,
+        account_type: str | None = None,
+        card_number: str | None = None,
+        wallet_type: str | None = None,
+        phone_number: str | None = None,
+        city: str | None = None,
+        state: str | None = None,
         user_id: str = "user_demo",
     ) -> dict:
         """Alias for add_delivery_method (used by flow)."""
@@ -744,7 +744,7 @@ class MockRemittancesService:
     def get_delivery_methods(
         self,
         country: str,
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
     ) -> dict:
         """Get available delivery methods for a country."""
         corridor = CORRIDORS.get(country)
@@ -821,7 +821,7 @@ class MockRemittancesService:
         self,
         recipient_id: str,
         amount_usd: float,
-        delivery_method_id: Optional[str] = None,
+        delivery_method_id: str | None = None,
         payment_method_id: str = "pm_default",
         user_id: str = "user_demo",
     ) -> dict:
@@ -838,13 +838,12 @@ class MockRemittancesService:
         # Get delivery method
         if delivery_method_id:
             delivery_method = next(
-                (dm for dm in recipient.get("delivery_methods", []) if dm["id"] == delivery_method_id),
-                None
+                (dm for dm in recipient.get("delivery_methods", []) if dm["id"] == delivery_method_id), None
             )
         else:
             delivery_method = next(
                 (dm for dm in recipient.get("delivery_methods", []) if dm.get("is_default")),
-                recipient.get("delivery_methods", [{}])[0] if recipient.get("delivery_methods") else None
+                recipient.get("delivery_methods", [{}])[0] if recipient.get("delivery_methods") else None,
             )
 
         if not delivery_method:
@@ -931,7 +930,7 @@ class MockRemittancesService:
     def get_transfer_status(
         self,
         transfer_id: str,
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
     ) -> dict:
         """Get status of a specific transfer."""
         transfer = self._transfers.get(transfer_id)
@@ -967,7 +966,7 @@ class MockRemittancesService:
     def list_transfers(
         self,
         limit: int = 5,
-        status: Optional[str] = None,
+        status: str | None = None,
         user_id: str = "user_demo",
     ) -> dict:
         """Get user's recent transfers."""
@@ -981,16 +980,18 @@ class MockRemittancesService:
         formatted = []
         for t in transfers:
             status_config = TRANSFER_STATES.get(t["status"], {})
-            formatted.append({
-                "id": t["id"],
-                "recipient_name": t.get("recipient_name"),
-                "amount_usd": t.get("amount_usd"),
-                "amount_dest": t.get("amount_dest"),
-                "currency": t.get("currency"),
-                "status": t["status"],
-                "status_display": status_config.get("display", ""),
-                "created_at": t.get("created_at"),
-            })
+            formatted.append(
+                {
+                    "id": t["id"],
+                    "recipient_name": t.get("recipient_name"),
+                    "amount_usd": t.get("amount_usd"),
+                    "amount_dest": t.get("amount_dest"),
+                    "currency": t.get("currency"),
+                    "status": t["status"],
+                    "status_display": status_config.get("display", ""),
+                    "created_at": t.get("created_at"),
+                }
+            )
 
         return {
             "transfers": formatted,
@@ -1013,7 +1014,6 @@ class MockRemittancesService:
         status_config = TRANSFER_STATES.get(transfer["status"], {})
 
         if not status_config.get("cancellable", False):
-            reason = "ya está en progreso" if transfer["status"] == "IN_PROGRESS" else "ya fue completado"
             return {
                 "error": "NOT_CANCELLABLE",
                 "status": transfer["status"],
@@ -1048,7 +1048,7 @@ class MockRemittancesService:
         snpl_loan_id: str,
         recipient_id: str,
         amount_usd: float,
-        delivery_method_id: Optional[str] = None,
+        delivery_method_id: str | None = None,
         user_id: str = "user_demo",
     ) -> dict:
         """Create a remittance transfer funded by SNPL credit.
@@ -1070,13 +1070,12 @@ class MockRemittancesService:
         # Get delivery method
         if delivery_method_id:
             delivery_method = next(
-                (dm for dm in recipient.get("delivery_methods", []) if dm["id"] == delivery_method_id),
-                None
+                (dm for dm in recipient.get("delivery_methods", []) if dm["id"] == delivery_method_id), None
             )
         else:
             delivery_method = next(
                 (dm for dm in recipient.get("delivery_methods", []) if dm.get("is_default")),
-                recipient.get("delivery_methods", [{}])[0] if recipient.get("delivery_methods") else None
+                recipient.get("delivery_methods", [{}])[0] if recipient.get("delivery_methods") else None,
             )
 
         if not delivery_method:
@@ -1172,18 +1171,20 @@ class MockRemittancesService:
 
         options = []
         for t in completed:
-            options.append({
-                "id": t["id"],
-                "recipient_id": t.get("recipient_id"),
-                "recipient_name": t.get("recipient_name"),
-                "country": t.get("country"),
-                "amount_usd": t.get("amount_usd"),
-                "amount_dest": t.get("amount_dest"),
-                "currency": t.get("currency"),
-                "delivery_method_id": t.get("delivery_method_id"),
-                "delivery_method_display": t.get("delivery_method_display"),
-                "created_at": t.get("created_at"),
-            })
+            options.append(
+                {
+                    "id": t["id"],
+                    "recipient_id": t.get("recipient_id"),
+                    "recipient_name": t.get("recipient_name"),
+                    "country": t.get("country"),
+                    "amount_usd": t.get("amount_usd"),
+                    "amount_dest": t.get("amount_dest"),
+                    "currency": t.get("currency"),
+                    "delivery_method_id": t.get("delivery_method_id"),
+                    "delivery_method_display": t.get("delivery_method_display"),
+                    "created_at": t.get("created_at"),
+                }
+            )
 
         return {
             "options": options,
@@ -1201,7 +1202,7 @@ class MockRemittancesService:
         self,
         amount_usd: float,
         to_currency: str = "MXN",
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
     ) -> dict:
         """Legacy method - maps to create_quote."""
         # Find country by currency

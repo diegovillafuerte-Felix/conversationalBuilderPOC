@@ -1,13 +1,12 @@
 """Conversation history compaction service."""
 
 import logging
-from typing import Optional
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.conversation import ConversationMessage, ConversationHistoryCompacted
 from app.core.llm_client import get_llm_client
+from app.models.conversation import ConversationHistoryCompacted, ConversationMessage
 
 logger = logging.getLogger(__name__)
 
@@ -26,13 +25,12 @@ class HistoryCompactor:
     async def should_compact(self, session_id: str) -> bool:
         """Check if session needs compaction."""
         result = await self.db.execute(
-            select(func.count(ConversationMessage.id))
-            .where(ConversationMessage.session_id == session_id)
+            select(func.count(ConversationMessage.id)).where(ConversationMessage.session_id == session_id)
         )
         count = result.scalar() or 0
         return count > COMPACTION_THRESHOLD
 
-    async def compact_history(self, user_id: str, session_id: str) -> Optional[str]:
+    async def compact_history(self, user_id: str, session_id: str) -> str | None:
         """Compact older messages into a summary."""
         # Get all messages ordered by time
         result = await self.db.execute(
@@ -52,9 +50,7 @@ class HistoryCompactor:
             return None
 
         # Build conversation text for summarization
-        conversation_text = "\n".join([
-            f"{msg.role}: {msg.content}" for msg in to_compact
-        ])
+        conversation_text = "\n".join([f"{msg.role}: {msg.content}" for msg in to_compact])
 
         # Generate summary via LLM
         try:
@@ -65,8 +61,7 @@ class HistoryCompactor:
 
         # Store compacted history
         existing = await self.db.execute(
-            select(ConversationHistoryCompacted)
-            .where(ConversationHistoryCompacted.user_id == user_id)
+            select(ConversationHistoryCompacted).where(ConversationHistoryCompacted.user_id == user_id)
         )
         compacted = existing.scalar_one_or_none()
 
@@ -85,10 +80,9 @@ class HistoryCompactor:
 
         # Delete compacted messages in bulk (single query instead of N deletes)
         from sqlalchemy import delete
+
         msg_ids = [msg.id for msg in to_compact]
-        await self.db.execute(
-            delete(ConversationMessage).where(ConversationMessage.id.in_(msg_ids))
-        )
+        await self.db.execute(delete(ConversationMessage).where(ConversationMessage.id.in_(msg_ids)))
 
         await self.db.flush()
         logger.info(f"Compacted {len(msg_ids)} messages for user {user_id}")
@@ -109,11 +103,10 @@ Mantén el resumen bajo 150 palabras y en español.""",
         )
         return response.text
 
-    async def get_compacted_history(self, user_id: str) -> Optional[str]:
+    async def get_compacted_history(self, user_id: str) -> str | None:
         """Get compacted history for a user."""
         result = await self.db.execute(
-            select(ConversationHistoryCompacted)
-            .where(ConversationHistoryCompacted.user_id == user_id)
+            select(ConversationHistoryCompacted).where(ConversationHistoryCompacted.user_id == user_id)
         )
         compacted = result.scalar_one_or_none()
         return compacted.compacted_history if compacted else None

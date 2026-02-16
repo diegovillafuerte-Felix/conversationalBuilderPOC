@@ -1,17 +1,17 @@
 """Unified routing handler for the orchestrator."""
 
 import logging
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.session import ConversationSession
-from app.core.config_types import AgentConfig, SubflowConfig
-from app.core.routing import RoutingType, RoutingOutcome
 from app.core.agent_registry import get_agent_registry
+from app.core.config_types import AgentConfig, SubflowConfig
+from app.core.event_trace import EventCategory
+from app.core.routing import RoutingOutcome, RoutingType
 from app.core.state_manager import StateManager
 from app.core.template_renderer import TemplateRenderer
-from app.core.event_trace import EventCategory
+from app.models.session import ConversationSession
 
 if TYPE_CHECKING:
     from app.core.event_trace import EventTracer
@@ -60,20 +60,11 @@ class RoutingHandler:
 
         # SERVICE tools are not routing - let orchestrator handle normally
         if result.action == RoutingType.SERVICE:
-            return RoutingOutcome(
-                handled=False,
-                state_changed=False,
-                response_text=None
-            )
+            return RoutingOutcome(handled=False, state_changed=False, response_text=None)
 
         if not result.success:
             logger.error(f"Routing resolution failed for {tool_name}: {result.error}")
-            return RoutingOutcome(
-                handled=True,
-                state_changed=False,
-                response_text=None,
-                error=result.error
-            )
+            return RoutingOutcome(handled=True, state_changed=False, response_text=None, error=result.error)
 
         if result.action == RoutingType.ENTER_AGENT:
             return await self._handle_enter_agent(result, session)
@@ -87,10 +78,7 @@ class RoutingHandler:
         else:
             logger.error(f"Unknown routing action: {result.action}")
             return RoutingOutcome(
-                handled=True,
-                state_changed=False,
-                response_text=None,
-                error=f"Unknown routing action: {result.action}"
+                handled=True, state_changed=False, response_text=None, error=f"Unknown routing action: {result.action}"
             )
 
     async def _handle_enter_agent(
@@ -102,11 +90,7 @@ class RoutingHandler:
         agent = result.target_entity
         previous_agent_id = session.get_current_agent_id() if session.agent_stack else None
 
-        await self.state_manager.push_agent(
-            session,
-            agent.config_id,
-            f"User requested {agent.config_id}"
-        )
+        await self.state_manager.push_agent(session, agent.config_id, f"User requested {agent.config_id}")
 
         logger.info(f"Routing: entered agent {agent.config_id}")
 
@@ -119,14 +103,14 @@ class RoutingHandler:
                 data={
                     "previous_agent_id": previous_agent_id,
                     "new_agent_id": agent.config_id,
-                    "stack_depth": len(session.agent_stack)
-                }
+                    "stack_depth": len(session.agent_stack),
+                },
             )
 
         return RoutingOutcome(
             handled=True,
             state_changed=True,  # Agent changed
-            response_text=None
+            response_text=None,
         )
 
     async def _handle_start_flow(
@@ -146,9 +130,7 @@ class RoutingHandler:
             cross_agent = registry.get_agent(routing_config.cross_agent)
             if cross_agent:
                 await self.state_manager.push_agent(
-                    session,
-                    cross_agent.config_id,
-                    f"Cross-agent flow: {result.target_id}"
+                    session, cross_agent.config_id, f"Cross-agent flow: {result.target_id}"
                 )
                 target_agent = cross_agent
                 logger.info(f"Routing: entered cross-agent {cross_agent.config_id} for flow {result.target_id}")
@@ -159,10 +141,7 @@ class RoutingHandler:
                         EventCategory.AGENT,
                         "cross_agent_entered",
                         f"Entered cross-agent: {cross_agent.config_id}",
-                        data={
-                            "cross_agent_id": cross_agent.config_id,
-                            "for_flow": result.target_id
-                        }
+                        data={"cross_agent_id": cross_agent.config_id, "for_flow": result.target_id},
                     )
             else:
                 logger.warning(f"Cross-agent {routing_config.cross_agent} not found, starting flow in current agent")
@@ -174,7 +153,7 @@ class RoutingHandler:
                 handled=True,
                 state_changed=False,
                 response_text=None,
-                error=f"Subflow {result.target_id} not found in agent {target_agent.config_id}"
+                error=f"Subflow {result.target_id} not found in agent {target_agent.config_id}",
             )
 
         # Extract initial data from tool parameters
@@ -194,14 +173,14 @@ class RoutingHandler:
                     "flow_config_id": subflow.config_id,
                     "initial_state": subflow.initial_state,
                     "initial_data_keys": list(initial_data.keys()),
-                    "agent_id": target_agent.config_id
-                }
+                    "agent_id": target_agent.config_id,
+                },
             )
 
         return RoutingOutcome(
             handled=True,
             state_changed=True,  # Flow started
-            response_text=None
+            response_text=None,
         )
 
     def _extract_flow_initial_data(self, tool_params: dict, subflow: SubflowConfig) -> dict:
@@ -249,21 +228,19 @@ class RoutingHandler:
         if action == "up_one_level":
             await self.state_manager.pop_agent(session)
             logger.info("Routing: navigated up one level")
-            current_agent = self.state_manager.get_current_agent(session)
             return RoutingOutcome(
                 handled=True,
                 state_changed=True,  # Popped to parent agent
-                response_text=None
+                response_text=None,
             )
 
         elif action == "go_home":
             await self.state_manager.go_home(session)
             logger.info("Routing: navigated home")
-            current_agent = self.state_manager.get_current_agent(session)
             return RoutingOutcome(
                 handled=True,
                 state_changed=True,  # Returned to root
-                response_text=None
+                response_text=None,
             )
 
         elif action == "escalate_to_human":
@@ -273,14 +250,11 @@ class RoutingHandler:
             return RoutingOutcome(
                 handled=True,
                 state_changed=False,  # No state change, conversation ends
-                response_text="Entiendo. Te voy a conectar con un agente humano que podrá ayudarte mejor. Un momento por favor..."
+                response_text="Entiendo. Te voy a conectar con un agente humano que podrá ayudarte mejor. Un momento por favor...",
             )
 
         else:
             logger.error(f"Unknown navigation action: {action}")
             return RoutingOutcome(
-                handled=True,
-                state_changed=False,
-                response_text=None,
-                error=f"Unknown navigation action: {action}"
+                handled=True, state_changed=False, response_text=None, error=f"Unknown navigation action: {action}"
             )

@@ -1,7 +1,6 @@
 """Configuration for services gateway."""
 
 from functools import lru_cache
-from typing import List
 
 from pydantic_settings import BaseSettings
 
@@ -18,7 +17,7 @@ class Settings(BaseSettings):
     api_prefix: str = "/api/v1"
 
     # CORS
-    cors_origins: List[str] = [
+    cors_origins: list[str] = [
         "http://localhost:3000",
         "http://localhost:5173",
         "http://localhost:8000",

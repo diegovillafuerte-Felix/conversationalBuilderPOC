@@ -1,7 +1,7 @@
 """Pydantic schemas for chat API requests and responses."""
 
 from datetime import datetime
-from typing import Optional, List, Any
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -10,9 +10,7 @@ from pydantic import BaseModel, Field
 class ChatMessageRequest(BaseModel):
     """Request to send a chat message."""
 
-    session_id: Optional[UUID] = Field(
-        None, description="Existing session ID. If not provided, creates new session."
-    )
+    session_id: UUID | None = Field(None, description="Existing session ID. If not provided, creates new session.")
     user_id: str = Field(..., description="User identifier")
     message: str = Field(..., min_length=1, description="User's message content")
 
@@ -22,9 +20,9 @@ class ToolCallInfo(BaseModel):
 
     tool_name: str
     parameters: dict[str, Any]
-    result: Optional[Any] = None
+    result: Any | None = None
     requires_confirmation: bool = False
-    confirmation_message: Optional[str] = None
+    confirmation_message: str | None = None
 
 
 class TraceEventInfo(BaseModel):
@@ -37,39 +35,38 @@ class TraceEventInfo(BaseModel):
     timestamp: str = Field(..., description="ISO timestamp")
     level: str = Field(default="info", description="Severity level (info, debug, warning, error)")
     data: dict = Field(default_factory=dict, description="Event-specific payload")
-    duration_ms: Optional[int] = Field(None, description="Duration in milliseconds")
-    parent_id: Optional[str] = Field(None, description="Parent event ID for nesting")
-    turn_id: Optional[str] = Field(None, description="Groups events by message turn")
-    user_message: Optional[str] = Field(None, description="User message that triggered this turn")
-    assistant_response: Optional[str] = Field(None, description="Assistant response for this turn")
+    duration_ms: int | None = Field(None, description="Duration in milliseconds")
+    parent_id: str | None = Field(None, description="Parent event ID for nesting")
+    turn_id: str | None = Field(None, description="Groups events by message turn")
+    user_message: str | None = Field(None, description="User message that triggered this turn")
+    assistant_response: str | None = Field(None, description="Assistant response for this turn")
 
 
 class DebugLLMCall(BaseModel):
     """Debug information about an LLM call."""
 
     system_prompt: str = Field(..., description="Full system prompt sent to LLM")
-    messages: List[dict] = Field(..., description="Messages array sent to LLM")
-    tools_provided: List[str] = Field(default_factory=list, description="Tool names provided to LLM")
+    messages: list[dict] = Field(..., description="Messages array sent to LLM")
+    tools_provided: list[str] = Field(default_factory=list, description="Tool names provided to LLM")
     model: str = Field(..., description="Model used")
     temperature: float = Field(..., description="Temperature setting")
-    raw_response: Optional[str] = Field(None, description="Raw text response from LLM")
-    token_counts: Optional[dict] = Field(None, description="Token usage breakdown")
+    raw_response: str | None = Field(None, description="Raw text response from LLM")
+    token_counts: dict | None = Field(None, description="Token usage breakdown")
 
 
 class DebugInfo(BaseModel):
     """Debug information for developer view."""
 
-    llm_call: Optional[DebugLLMCall] = Field(None, description="LLM call details")
-    agent_stack: List[dict] = Field(default_factory=list, description="Current agent navigation stack")
-    flow_info: Optional[dict] = Field(None, description="Current flow state details")
-    context_sections: Optional[dict] = Field(None, description="Context assembly breakdown")
-    processing_time_ms: Optional[int] = Field(None, description="Total processing time")
-    routing_path: List[dict] = Field(default_factory=list, description="Routing events during conversation")
+    llm_call: DebugLLMCall | None = Field(None, description="LLM call details")
+    agent_stack: list[dict] = Field(default_factory=list, description="Current agent navigation stack")
+    flow_info: dict | None = Field(None, description="Current flow state details")
+    context_sections: dict | None = Field(None, description="Context assembly breakdown")
+    processing_time_ms: int | None = Field(None, description="Total processing time")
+    routing_path: list[dict] = Field(default_factory=list, description="Routing events during conversation")
     chain_iterations: int = Field(default=0, description="Number of routing chain iterations")
     stable_state_reached: bool = Field(default=False, description="Whether chain reached stable state")
-    event_trace: List[TraceEventInfo] = Field(
-        default_factory=list,
-        description="Chronological trace of all events during processing"
+    event_trace: list[TraceEventInfo] = Field(
+        default_factory=list, description="Chronological trace of all events during processing"
     )
 
 
@@ -82,17 +79,13 @@ class ChatMessageResponse(BaseModel):
     agent_name: str = Field(..., description="Name of the responding agent")
 
     # Optional metadata
-    tool_calls: List[ToolCallInfo] = Field(
-        default_factory=list, description="Tools called during response"
-    )
-    pending_confirmation: Optional[dict] = Field(
-        None, description="Confirmation awaiting user response"
-    )
-    flow_state: Optional[str] = Field(None, description="Current subflow state if in a flow")
+    tool_calls: list[ToolCallInfo] = Field(default_factory=list, description="Tools called during response")
+    pending_confirmation: dict | None = Field(None, description="Confirmation awaiting user response")
+    flow_state: str | None = Field(None, description="Current subflow state if in a flow")
     escalated: bool = Field(False, description="Whether conversation was escalated")
 
     # Debug information (optional, for developer view)
-    debug: Optional[DebugInfo] = Field(None, description="Debug information for developer view")
+    debug: DebugInfo | None = Field(None, description="Debug information for developer view")
 
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
@@ -109,9 +102,9 @@ class SessionResponse(BaseModel):
     session_id: UUID
     user_id: str
     status: str
-    current_agent_id: Optional[str] = None
-    current_agent_name: Optional[str] = None
-    current_flow: Optional[str] = None
+    current_agent_id: str | None = None
+    current_agent_name: str | None = None
+    current_flow: str | None = None
     message_count: int
     created_at: datetime
     last_interaction_at: datetime
@@ -120,7 +113,7 @@ class SessionResponse(BaseModel):
 class SessionEndRequest(BaseModel):
     """Request to end a session."""
 
-    reason: Optional[str] = Field(None, description="Reason for ending session")
+    reason: str | None = Field(None, description="Reason for ending session")
 
 
 class MessageHistoryItem(BaseModel):
@@ -129,15 +122,15 @@ class MessageHistoryItem(BaseModel):
     role: str
     content: str
     timestamp: datetime
-    agent_id: Optional[str] = None
-    tool_calls: Optional[List[ToolCallInfo]] = None
+    agent_id: str | None = None
+    tool_calls: list[ToolCallInfo] | None = None
 
 
 class ConversationHistoryResponse(BaseModel):
     """Response with conversation history."""
 
     session_id: UUID
-    messages: List[MessageHistoryItem]
+    messages: list[MessageHistoryItem]
     total_messages: int
 
 
@@ -154,8 +147,8 @@ class UserContextResponse(BaseModel):
 
     user_id: str
     profile: dict
-    product_summaries: Optional[dict] = None
-    behavioral_summary: Optional[str] = None
+    product_summaries: dict | None = None
+    behavioral_summary: str | None = None
 
 
 class ConversationListItem(BaseModel):
@@ -165,11 +158,11 @@ class ConversationListItem(BaseModel):
     user_id: str
     status: str
     message_count: int
-    current_agent_id: Optional[str] = None
-    current_flow: Optional[str] = None
+    current_agent_id: str | None = None
+    current_flow: str | None = None
     created_at: datetime
     last_interaction_at: datetime
-    last_message_preview: Optional[str] = None
+    last_message_preview: str | None = None
 
 
 class ConversationMessageItem(BaseModel):
@@ -188,16 +181,16 @@ class ConversationDetailResponse(BaseModel):
     session_id: UUID
     user_id: str
     status: str
-    current_agent_id: Optional[str] = None
-    current_flow: Optional[str] = None
+    current_agent_id: str | None = None
+    current_flow: str | None = None
     message_count: int
     created_at: datetime
     last_interaction_at: datetime
-    messages: List[ConversationMessageItem] = Field(default_factory=list)
+    messages: list[ConversationMessageItem] = Field(default_factory=list)
 
 
 class ConversationEventsResponse(BaseModel):
     """Event trace records for a conversation session."""
 
     session_id: UUID
-    events: List[TraceEventInfo] = Field(default_factory=list)
+    events: list[TraceEventInfo] = Field(default_factory=list)

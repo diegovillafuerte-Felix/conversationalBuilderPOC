@@ -69,9 +69,7 @@ class TestChatAPIEndpoints:
     @pytest.mark.asyncio
     async def test_get_session(self, test_client, sample_session):
         """Test getting session information."""
-        response = await test_client.get(
-            f"/api/chat/session/{sample_session.session_id}"
-        )
+        response = await test_client.get(f"/api/chat/session/{sample_session.session_id}")
 
         assert response.status_code == 200
         data = response.json()
@@ -115,9 +113,7 @@ class TestChatAPIMessageFlow:
 
     @pytest.mark.integration
     @pytest.mark.asyncio
-    async def test_conversation_returns_response_fields(
-        self, test_client, sample_agent
-    ):
+    async def test_conversation_returns_response_fields(self, test_client, sample_agent):
         """Test that responses include expected fields."""
         response = await test_client.post(
             "/api/chat/message",
@@ -142,9 +138,7 @@ class TestChatAPIMessageFlow:
 
     @pytest.mark.integration
     @pytest.mark.asyncio
-    async def test_session_persists_across_messages(
-        self, test_client, sample_agent
-    ):
+    async def test_session_persists_across_messages(self, test_client, sample_agent):
         """Test that session state persists across messages."""
         # First message - creates session
         response1 = await test_client.post(

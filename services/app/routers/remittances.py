@@ -1,13 +1,10 @@
 """Remittances service API router."""
 
-from typing import Optional
-
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 
-from app.services.remittances import MockRemittancesService
 from app.schemas.common import ServiceResponse
-
+from app.services.remittances import MockRemittancesService
 
 router = APIRouter(prefix="/remittances", tags=["remittances"])
 
@@ -27,6 +24,7 @@ def get_service(language: str = "es") -> MockRemittancesService:
 
 class CreateQuoteRequest(BaseModel):
     """Request to create a quote."""
+
     amount_usd: float = Field(gt=0, description="Amount in USD")
     country: str = Field(default="MX", description="Destination country code")
     delivery_type: str = Field(default="BANK", description="Delivery method type")
@@ -34,50 +32,54 @@ class CreateQuoteRequest(BaseModel):
 
 class AddRecipientRequest(BaseModel):
     """Request to add a recipient."""
+
     first_name: str
     last_name: str
     country: str
     delivery_type: str
-    city: Optional[str] = None
-    state: Optional[str] = None
-    bank_name: Optional[str] = None
-    account_number: Optional[str] = None
-    clabe: Optional[str] = None
-    account_type: Optional[str] = None
-    card_number: Optional[str] = None
-    wallet_type: Optional[str] = None
-    phone_number: Optional[str] = None
-    middle_name: Optional[str] = None
+    city: str | None = None
+    state: str | None = None
+    bank_name: str | None = None
+    account_number: str | None = None
+    clabe: str | None = None
+    account_type: str | None = None
+    card_number: str | None = None
+    wallet_type: str | None = None
+    phone_number: str | None = None
+    middle_name: str | None = None
 
 
 class AddDeliveryMethodRequest(BaseModel):
     """Request to add a delivery method."""
+
     delivery_type: str
-    bank_name: Optional[str] = None
-    account_number: Optional[str] = None
-    clabe: Optional[str] = None
-    account_type: Optional[str] = None
-    card_number: Optional[str] = None
-    wallet_type: Optional[str] = None
-    phone_number: Optional[str] = None
-    city: Optional[str] = None
-    state: Optional[str] = None
+    bank_name: str | None = None
+    account_number: str | None = None
+    clabe: str | None = None
+    account_type: str | None = None
+    card_number: str | None = None
+    wallet_type: str | None = None
+    phone_number: str | None = None
+    city: str | None = None
+    state: str | None = None
 
 
 class CreateTransferRequest(BaseModel):
     """Request to create a transfer."""
+
     recipient_id: str
     amount_usd: float = Field(gt=0)
-    delivery_method_id: Optional[str] = None
+    delivery_method_id: str | None = None
     payment_method_id: str = "pm_default"
 
 
 class CreateSnplTransferRequest(BaseModel):
     """Request to create SNPL-funded transfer."""
+
     snpl_loan_id: str
     recipient_id: str
     amount_usd: float = Field(gt=0)
-    delivery_method_id: Optional[str] = None
+    delivery_method_id: str | None = None
 
 
 # ==================== Corridor & Rate Endpoints ====================
@@ -85,7 +87,7 @@ class CreateSnplTransferRequest(BaseModel):
 
 @router.get("/corridors")
 async def get_corridors(
-    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_user_id: str | None = Header(None, alias="X-User-Id"),
     accept_language: str = Header("es", alias="Accept-Language"),
 ) -> ServiceResponse:
     """Get all supported country corridors."""
@@ -97,9 +99,9 @@ async def get_corridors(
 @router.get("/exchange-rate")
 async def get_exchange_rate(
     country: str = "MX",
-    to_currency: Optional[str] = None,
+    to_currency: str | None = None,
     from_currency: str = "USD",
-    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_user_id: str | None = Header(None, alias="X-User-Id"),
     accept_language: str = Header("es", alias="Accept-Language"),
 ) -> ServiceResponse:
     """Get current exchange rate for a corridor."""
@@ -118,7 +120,7 @@ async def get_exchange_rate(
 @router.post("/quotes")
 async def create_quote(
     request: CreateQuoteRequest,
-    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_user_id: str | None = Header(None, alias="X-User-Id"),
     accept_language: str = Header("es", alias="Accept-Language"),
 ) -> ServiceResponse:
     """Create a quote with fees and conversion."""
@@ -139,7 +141,7 @@ async def create_quote(
 
 @router.get("/recipients")
 async def list_recipients(
-    country: Optional[str] = None,
+    country: str | None = None,
     x_user_id: str = Header("user_demo", alias="X-User-Id"),
     accept_language: str = Header("es", alias="Accept-Language"),
 ) -> ServiceResponse:
@@ -241,7 +243,7 @@ async def add_delivery_method(
 @router.get("/delivery-methods")
 async def get_delivery_methods(
     country: str,
-    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_user_id: str | None = Header(None, alias="X-User-Id"),
     accept_language: str = Header("es", alias="Accept-Language"),
 ) -> ServiceResponse:
     """Get available delivery methods for a country."""
@@ -292,7 +294,7 @@ async def create_transfer(
 @router.get("/transfers")
 async def list_transfers(
     limit: int = 5,
-    status: Optional[str] = None,
+    status: str | None = None,
     x_user_id: str = Header("user_demo", alias="X-User-Id"),
     accept_language: str = Header("es", alias="Accept-Language"),
 ) -> ServiceResponse:
@@ -305,7 +307,7 @@ async def list_transfers(
 @router.get("/transfers/{transfer_id}")
 async def get_transfer_status(
     transfer_id: str,
-    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_user_id: str | None = Header(None, alias="X-User-Id"),
     accept_language: str = Header("es", alias="Accept-Language"),
 ) -> ServiceResponse:
     """Get status of a specific transfer."""

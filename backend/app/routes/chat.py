@@ -3,37 +3,36 @@
 import logging
 import uuid as uuid_module
 from datetime import datetime
-from typing import Optional, List
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
 from openai import OpenAIError
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.agent_registry import get_agent_registry
+from app.core.orchestrator import Orchestrator
 from app.database import get_db
+from app.models.conversation import ConversationMessage
+from app.models.session import ConversationSession
+from app.models.user import UserContext
 from app.schemas.chat import (
     ChatMessageRequest,
     ChatMessageResponse,
-    SessionCreateRequest,
-    SessionResponse,
-    SessionEndRequest,
-    ToolCallInfo,
-    UserListItem,
-    UserContextResponse,
+    ConversationDetailResponse,
+    ConversationEventsResponse,
+    ConversationListItem,
+    ConversationMessageItem,
     DebugInfo,
     DebugLLMCall,
+    SessionCreateRequest,
+    SessionEndRequest,
+    SessionResponse,
+    ToolCallInfo,
     TraceEventInfo,
-    ConversationListItem,
-    ConversationDetailResponse,
-    ConversationMessageItem,
-    ConversationEventsResponse,
+    UserContextResponse,
+    UserListItem,
 )
-from app.core.orchestrator import Orchestrator
-from app.core.agent_registry import get_agent_registry
-from app.models.session import ConversationSession
-from app.models.conversation import ConversationMessage
-from app.models.user import UserContext
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +69,9 @@ async def send_message(
                     temperature=response.debug.llm_call.temperature,
                     raw_response=response.debug.llm_call.raw_response,
                     token_counts=response.debug.llm_call.token_counts,
-                ) if response.debug.llm_call else None,
+                )
+                if response.debug.llm_call
+                else None,
                 agent_stack=response.debug.agent_stack,
                 flow_info=response.debug.flow_info,
                 context_sections=response.debug.context_sections,
@@ -131,7 +132,7 @@ async def send_message(
 
     except Exception as e:
         logger.error(f"Error handling message: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/session", response_model=SessionResponse)
@@ -181,11 +182,7 @@ async def get_session(
     db: AsyncSession = Depends(get_db),
 ):
     """Get session information."""
-    result = await db.execute(
-        select(ConversationSession).where(
-            ConversationSession.session_id == session_id
-        )
-    )
+    result = await db.execute(select(ConversationSession).where(ConversationSession.session_id == session_id))
     session = result.scalar_one_or_none()
 
     if not session:
@@ -214,15 +211,11 @@ async def get_session(
 @router.post("/session/{session_id}/end", response_model=SessionResponse)
 async def end_session(
     session_id: UUID,
-    request: Optional[SessionEndRequest] = None,
+    request: SessionEndRequest | None = None,
     db: AsyncSession = Depends(get_db),
 ):
     """End a chat session."""
-    result = await db.execute(
-        select(ConversationSession).where(
-            ConversationSession.session_id == session_id
-        )
-    )
+    result = await db.execute(select(ConversationSession).where(ConversationSession.session_id == session_id))
     session = result.scalar_one_or_none()
 
     if not session:
@@ -246,7 +239,7 @@ async def end_session(
     )
 
 
-@router.get("/users", response_model=List[UserListItem])
+@router.get("/users", response_model=list[UserListItem])
 async def list_test_users(db: AsyncSession = Depends(get_db)):
     """List available test users."""
     result = await db.execute(select(UserContext))
@@ -265,9 +258,7 @@ async def list_test_users(db: AsyncSession = Depends(get_db)):
 @router.get("/users/{user_id}/context", response_model=UserContextResponse)
 async def get_user_context(user_id: str, db: AsyncSession = Depends(get_db)):
     """Get user context for display."""
-    result = await db.execute(
-        select(UserContext).where(UserContext.user_id == user_id)
-    )
+    result = await db.execute(select(UserContext).where(UserContext.user_id == user_id))
     user = result.scalar_one_or_none()
 
     if not user:
@@ -281,11 +272,11 @@ async def get_user_context(user_id: str, db: AsyncSession = Depends(get_db)):
     )
 
 
-@router.get("/conversations", response_model=List[ConversationListItem])
+@router.get("/conversations", response_model=list[ConversationListItem])
 async def list_conversations(
-    user_id: Optional[str] = None,
-    status: Optional[str] = None,
-    q: Optional[str] = None,
+    user_id: str | None = None,
+    status: str | None = None,
+    q: str | None = None,
     limit: int = 50,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
@@ -314,7 +305,7 @@ async def list_conversations(
     result = await db.execute(query)
     sessions = result.scalars().all()
 
-    items: List[ConversationListItem] = []
+    items: list[ConversationListItem] = []
     for session in sessions:
         last_message_result = await db.execute(
             select(ConversationMessage)
@@ -404,7 +395,7 @@ async def get_conversation_events(
     )
     assistant_messages = messages_result.scalars().all()
 
-    events: List[TraceEventInfo] = []
+    events: list[TraceEventInfo] = []
     for message in assistant_messages:
         trace_events = (message.msg_metadata or {}).get("eventTrace", [])
         for event in trace_events:

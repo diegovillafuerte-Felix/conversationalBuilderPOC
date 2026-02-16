@@ -1,15 +1,14 @@
 """Fixtures for conversational tests."""
 
-import pytest
-import pytest_asyncio
 import json
 from pathlib import Path
-from typing import List
+
+import pytest
 
 from .schemas import TestScenario
 
 
-def load_scenarios_from_agent_config(agent_config_path: Path) -> List[TestScenario]:
+def load_scenarios_from_agent_config(agent_config_path: Path) -> list[TestScenario]:
     """Load test scenarios from an agent's JSON config."""
     with open(agent_config_path) as f:
         config = json.load(f)
@@ -32,7 +31,7 @@ def get_all_agent_scenarios():
             scenarios = load_scenarios_from_agent_config(config_file)
             for scenario in scenarios:
                 all_scenarios.append((config_file.stem, scenario))
-        except Exception as e:
+        except Exception:
             # Skip files that can't be parsed or don't have scenarios
             continue
 

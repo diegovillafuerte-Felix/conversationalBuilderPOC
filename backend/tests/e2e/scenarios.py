@@ -5,15 +5,15 @@ Quality judgment is left to whoever reads the output (Claude Code or a human).
 """
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 
 @dataclass
 class TurnGate:
     """Minimal structural gates — catches 'system is broken', not 'wrong answer'."""
+
     non_empty_message: bool = True
     agent_id_not: list[str] | None = None  # should NOT be one of these agents
-    expect_escalated: bool | None = None    # True = must be escalated, False = must NOT be
+    expect_escalated: bool | None = None  # True = must be escalated, False = must NOT be
 
 
 @dataclass

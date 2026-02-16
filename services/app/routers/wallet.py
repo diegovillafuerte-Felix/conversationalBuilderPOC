@@ -1,13 +1,10 @@
 """Wallet service API router."""
 
-from typing import Optional
-
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Header
 from pydantic import BaseModel, Field
 
-from app.services.wallet import MockWalletService
 from app.schemas.common import ServiceResponse
-
+from app.services.wallet import MockWalletService
 
 router = APIRouter(prefix="/wallet", tags=["wallet"])
 
@@ -27,12 +24,14 @@ def get_service(language: str = "es") -> MockWalletService:
 
 class AddFundsRequest(BaseModel):
     """Request to add funds to wallet."""
+
     amount: float = Field(gt=0)
     payment_method_id: str = "pm_1"
 
 
 class AddPaymentMethodRequest(BaseModel):
     """Request to add a payment method."""
+
     method_type: str
     token: str
 

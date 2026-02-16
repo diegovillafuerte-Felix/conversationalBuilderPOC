@@ -2,7 +2,6 @@
 
 import logging
 import time
-from typing import List, Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,11 +10,11 @@ from app.core.orchestrator import Orchestrator
 from app.models.user import UserContext
 
 from .schemas import (
-    TestScenario,
+    BehaviorResult,
     ConversationTurn,
     ScenarioResult,
+    TestScenario,
     TurnResult,
-    BehaviorResult,
 )
 from .validators import ResponseValidator
 
@@ -62,8 +61,8 @@ class ConversationalTestRunner:
 
             # Run conversation turns
             session_id = None
-            turn_results: List[TurnResult] = []
-            all_tool_calls: List[str] = []
+            turn_results: list[TurnResult] = []
+            all_tool_calls: list[str] = []
 
             for i, turn in enumerate(scenario.turns):
                 result = await self._run_turn(
@@ -120,9 +119,7 @@ class ConversationalTestRunner:
     async def _setup_context(self, context) -> None:
         """Set up the initial test context (user, balance, etc.)."""
         # Check if user exists, create or update
-        result = await self.db.execute(
-            select(UserContext).where(UserContext.user_id == context.user_id)
-        )
+        result = await self.db.execute(select(UserContext).where(UserContext.user_id == context.user_id))
         user = result.scalar_one_or_none()
 
         if not user:
@@ -132,9 +129,7 @@ class ConversationalTestRunner:
                     "name": "Test User",
                     "language": context.language,
                 },
-                product_summaries={
-                    "wallet": {"currentBalance": context.user_balance}
-                },
+                product_summaries={"wallet": {"currentBalance": context.user_balance}},
             )
             self.db.add(user)
         else:
@@ -151,7 +146,7 @@ class ConversationalTestRunner:
         orchestrator: Orchestrator,
         turn: ConversationTurn,
         user_id: str,
-        session_id: Optional[str],
+        session_id: str | None,
         turn_number: int,
     ) -> TurnResult:
         """Run a single conversation turn."""
@@ -170,7 +165,7 @@ class ConversationalTestRunner:
             tool_calls = [tc.get("name", "") for tc in response.tool_calls]
 
             # Validate expected behaviors
-            behavior_results: List[BehaviorResult] = []
+            behavior_results: list[BehaviorResult] = []
             for behavior in turn.expected_behaviors:
                 result = self.validator.validate(
                     behavior=behavior,
@@ -206,8 +201,8 @@ class ConversationalTestRunner:
     def _evaluate_success_criteria(
         self,
         scenario: TestScenario,
-        turn_results: List[TurnResult],
-        all_tool_calls: List[str],
+        turn_results: list[TurnResult],
+        all_tool_calls: list[str],
     ) -> dict:
         """Evaluate the overall success criteria."""
         criteria = scenario.success_criteria
@@ -215,33 +210,23 @@ class ConversationalTestRunner:
 
         if criteria.final_state:
             last_turn = turn_results[-1] if turn_results else None
-            results["final_state"] = (
-                last_turn.flow_state == criteria.final_state if last_turn else False
-            )
+            results["final_state"] = last_turn.flow_state == criteria.final_state if last_turn else False
 
         if criteria.tools_called:
-            results["tools_called"] = all(
-                tool in all_tool_calls for tool in criteria.tools_called
-            )
+            results["tools_called"] = all(tool in all_tool_calls for tool in criteria.tools_called)
 
         if criteria.no_escalation:
-            results["no_escalation"] = not any(
-                "escalate" in tc for tc in all_tool_calls
-            )
+            results["no_escalation"] = not any("escalate" in tc for tc in all_tool_calls)
 
         if criteria.no_error_state:
-            results["no_error_state"] = not any(
-                tr.flow_state == "error_state" for tr in turn_results
-            )
+            results["no_error_state"] = not any(tr.flow_state == "error_state" for tr in turn_results)
 
         if criteria.max_turns:
             results["max_turns"] = len(turn_results) <= criteria.max_turns
 
         return results
 
-    async def run_all_scenarios(
-        self, scenarios: List[TestScenario]
-    ) -> List[ScenarioResult]:
+    async def run_all_scenarios(self, scenarios: list[TestScenario]) -> list[ScenarioResult]:
         """Run all test scenarios."""
         results = []
         for scenario in scenarios:

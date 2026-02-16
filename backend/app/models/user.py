@@ -1,9 +1,8 @@
 """User context ORM model."""
 
 from datetime import datetime
-from typing import Optional
 
-from sqlalchemy import String, Text, DateTime, JSON
+from sqlalchemy import JSON, DateTime, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -21,10 +20,10 @@ class UserContext(Base):
 
     # Product summaries by product type
     # {remittances: {...}, credit: {...}, wallet: {...}, topups: {...}, billPay: {...}}
-    product_summaries: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    product_summaries: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     # Natural language behavioral summary for prompt injection
-    behavioral_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    behavioral_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     last_updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False

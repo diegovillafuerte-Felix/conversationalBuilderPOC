@@ -1,8 +1,8 @@
 """Template renderer for response templates."""
 
-import re
 import logging
-from typing import Optional, List
+import re
+
 from app.core.config_types import ResponseTemplateConfig
 
 logger = logging.getLogger(__name__)
@@ -89,12 +89,12 @@ class TemplateRenderer:
 
     def find_matching_template(
         self,
-        templates: List[ResponseTemplateConfig],
+        templates: list[ResponseTemplateConfig],
         trigger_type: str,
-        tool_name: Optional[str] = None,
-        state_name: Optional[str] = None,
-        error_code: Optional[str] = None,
-    ) -> Optional[ResponseTemplateConfig]:
+        tool_name: str | None = None,
+        state_name: str | None = None,
+        error_code: str | None = None,
+    ) -> ResponseTemplateConfig | None:
         """
         Find a matching response template based on trigger conditions.
 
@@ -134,7 +134,7 @@ class TemplateRenderer:
         self,
         template: ResponseTemplateConfig,
         data: dict,
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         Apply a response template with data.
 
@@ -198,13 +198,13 @@ class TemplateRenderer:
 
         lines = []
         for i, num in enumerate(numbers, 1):
-            carrier = num.get('carrier', '').capitalize()
+            carrier = num.get("carrier", "").capitalize()
             line = f"{i}. {num['nickname']}: {num['phoneNumber']} ({carrier})"
             lines.append(line)
 
         return "\n".join(lines)
 
-    def format_list(self, items: list, formatter: Optional[callable] = None) -> str:
+    def format_list(self, items: list, formatter: callable | None = None) -> str:
         """
         Format a generic list into a numbered string.
 
@@ -229,7 +229,7 @@ class TemplateRenderer:
 
 
 # Global renderer instance
-_template_renderer: Optional[TemplateRenderer] = None
+_template_renderer: TemplateRenderer | None = None
 
 
 def get_template_renderer() -> TemplateRenderer:

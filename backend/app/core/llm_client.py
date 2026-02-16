@@ -5,10 +5,10 @@ import json
 import logging
 import random
 import uuid
-from typing import Optional, List, Any
 from dataclasses import dataclass, field
+from typing import Any
 
-from openai import OpenAI, RateLimitError, APIConnectionError, APIStatusError
+from openai import APIConnectionError, APIStatusError, OpenAI, RateLimitError
 
 from app.config import get_settings
 
@@ -33,7 +33,7 @@ class LLMResponse:
     """Response from the LLM."""
 
     text: str
-    tool_calls: List[ToolCall] = field(default_factory=list)
+    tool_calls: list[ToolCall] = field(default_factory=list)
     stop_reason: str = "stop"
     model: str = ""
     input_tokens: int = 0
@@ -46,7 +46,7 @@ class LLMClient:
     def __init__(self):
         self.client = OpenAI(api_key=settings.openai_api_key)
 
-    def _convert_tools_to_openai_format(self, tools: List[dict]) -> List[dict]:
+    def _convert_tools_to_openai_format(self, tools: list[dict]) -> list[dict]:
         """Convert internal tool format to OpenAI function format."""
         openai_tools = []
         for tool in tools:
@@ -55,12 +55,8 @@ class LLMClient:
                 "function": {
                     "name": tool["name"],
                     "description": tool.get("description", ""),
-                    "parameters": tool.get("input_schema", {
-                        "type": "object",
-                        "properties": {},
-                        "required": []
-                    })
-                }
+                    "parameters": tool.get("input_schema", {"type": "object", "properties": {}, "required": []}),
+                },
             }
             openai_tools.append(openai_tool)
         return openai_tools
@@ -68,11 +64,11 @@ class LLMClient:
     async def complete(
         self,
         system_prompt: str,
-        messages: List[dict],
-        tools: Optional[List[dict]] = None,
-        model: Optional[str] = None,
-        temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None,
+        messages: list[dict],
+        tools: list[dict] | None = None,
+        model: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
     ) -> LLMResponse:
         """
         Send a completion request to OpenAI.
@@ -111,7 +107,9 @@ class LLMClient:
             request_kwargs["tools"] = openai_tools
             request_kwargs["tool_choice"] = "auto"
 
-        logger.debug(f"Sending request to OpenAI: model={model}, messages={len(messages)}, tools={len(tools) if tools else 0}")
+        logger.debug(
+            f"Sending request to OpenAI: model={model}, messages={len(messages)}, tools={len(tools) if tools else 0}"
+        )
 
         last_error = None
         for attempt in range(MAX_RETRIES):
@@ -150,20 +148,24 @@ class LLMClient:
             except (RateLimitError, APIConnectionError) as e:
                 last_error = e
                 # Exponential backoff with jitter to prevent thundering herd
-                base_delay = RETRY_DELAY_BASE * (2 ** attempt)
+                base_delay = RETRY_DELAY_BASE * (2**attempt)
                 jitter = random.uniform(0, base_delay * 0.3)  # 0-30% jitter
                 delay = base_delay + jitter
-                logger.warning(f"LLM request failed (attempt {attempt + 1}/{MAX_RETRIES}), retrying in {delay:.2f}s: {e}")
+                logger.warning(
+                    f"LLM request failed (attempt {attempt + 1}/{MAX_RETRIES}), retrying in {delay:.2f}s: {e}"
+                )
                 await asyncio.sleep(delay)
 
             except APIStatusError as e:
                 if e.status_code >= 500:
                     last_error = e
                     # Exponential backoff with jitter to prevent thundering herd
-                    base_delay = RETRY_DELAY_BASE * (2 ** attempt)
+                    base_delay = RETRY_DELAY_BASE * (2**attempt)
                     jitter = random.uniform(0, base_delay * 0.3)  # 0-30% jitter
                     delay = base_delay + jitter
-                    logger.warning(f"LLM server error (attempt {attempt + 1}/{MAX_RETRIES}), retrying in {delay:.2f}s: {e}")
+                    logger.warning(
+                        f"LLM server error (attempt {attempt + 1}/{MAX_RETRIES}), retrying in {delay:.2f}s: {e}"
+                    )
                     await asyncio.sleep(delay)
                 else:
                     # Don't retry 4xx client errors
@@ -180,12 +182,12 @@ class LLMClient:
     async def complete_with_tool_results(
         self,
         system_prompt: str,
-        messages: List[dict],
-        tools: List[dict],
-        tool_results: List[dict],
-        model: Optional[str] = None,
-        temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None,
+        messages: list[dict],
+        tools: list[dict],
+        tool_results: list[dict],
+        model: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
     ) -> LLMResponse:
         """
         Continue a conversation after tool execution.
@@ -202,11 +204,13 @@ class LLMClient:
         # Format tool results for OpenAI
         messages_with_results = messages.copy()
         for result in tool_results:
-            messages_with_results.append({
-                "role": "tool",
-                "tool_call_id": result.get("tool_call_id", ""),
-                "content": json.dumps(result.get("content", {})),
-            })
+            messages_with_results.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": result.get("tool_call_id", ""),
+                    "content": json.dumps(result.get("content", {})),
+                }
+            )
 
         return await self.complete(
             system_prompt=system_prompt,
@@ -219,7 +223,7 @@ class LLMClient:
 
 
 # Global client instance
-_llm_client: Optional[LLMClient] = None
+_llm_client: LLMClient | None = None
 
 
 def get_llm_client() -> LLMClient:
